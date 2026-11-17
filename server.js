@@ -518,7 +518,7 @@ function wanderIdle(m, mMap) {
   const now = Date.now();
   if (!m.wanderUntil || now > m.wanderUntil) {
     m.wanderUntil = now + 3000 + Math.random() * 6000;
-    m.wanderAngle = Math.random() < 0.3 ? null : Math.random() * Math.PI * 2;
+    m.wanderAngle = Math.random() * Math.PI * 2;
   }
   if (m.wanderAngle !== null) {
     const r = Math.min(MONSTER_TYPES[m.type].radius, 14);
