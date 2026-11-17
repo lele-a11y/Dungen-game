@@ -2204,11 +2204,19 @@ function tick() {
         }
       }
     } else {
-      // zurueck zum Ausgangspunkt schlendern
+      // ohne Ziel langsam umherwandern, in der Naehe des Ausgangspunkts
+      const now = Date.now();
+      if (!m.wanderUntil || now > m.wanderUntil) {
+        m.wanderUntil = now + 1500 + Math.random() * 3000;
+        m.wanderAngle = Math.random() < 0.3 ? null : Math.random() * Math.PI * 2;
+      }
       const d = dist(m.x, m.y, m.homeX, m.homeY);
-      if (d > 10) {
+      const r = Math.min(MONSTER_TYPES[m.type].radius, 14);
+      if (d > 140) {
         const angle = Math.atan2(m.homeY - m.y, m.homeX - m.x);
-        tryMove(mMap, m, Math.cos(angle) * 0.6, Math.sin(angle) * 0.6, Math.min(MONSTER_TYPES[m.type].radius, 14));
+        tryMove(mMap, m, Math.cos(angle) * 0.6, Math.sin(angle) * 0.6, r);
+      } else if (m.wanderAngle !== null) {
+        tryMove(mMap, m, Math.cos(m.wanderAngle) * 0.45, Math.sin(m.wanderAngle) * 0.45, r);
       }
     }
   }
