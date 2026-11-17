@@ -513,6 +513,21 @@ function tryMove(mapInfo, entity, dx, dy, radius) {
   if (!circleHitsWall(mapInfo, entity.x, ny, radius)) entity.y = ny;
 }
 
+// Langsam durch die Zone wandern, wenn kein Ziel in Reichweite ist
+function wanderIdle(m, mMap) {
+  const now = Date.now();
+  if (!m.wanderUntil || now > m.wanderUntil) {
+    m.wanderUntil = now + 3000 + Math.random() * 6000;
+    m.wanderAngle = Math.random() < 0.3 ? null : Math.random() * Math.PI * 2;
+  }
+  if (m.wanderAngle !== null) {
+    const r = Math.min(MONSTER_TYPES[m.type].radius, 14);
+    const ox = m.x, oy = m.y;
+    tryMove(mMap, m, Math.cos(m.wanderAngle) * 0.45, Math.sin(m.wanderAngle) * 0.45, r);
+    if (m.x === ox && m.y === oy) m.wanderUntil = 0;
+  }
+}
+
 // ---------------- Truhen ----------------
 const CHEST_COUNT_PER_TIER = 10;
 const CHEST_RESPAWN_MS = 90000;
@@ -1248,7 +1263,7 @@ function updateTreasure(id, m, mMap) {
     const d = dist(m.x, m.y, p.x, p.y);
     if (d < nd) { nd = d; near = p; }
   }
-  if (!near) return;
+  if (!near) { wanderIdle(m, mMap); return; }
   const def = MONSTER_TYPES.treasure;
   const a = Math.atan2(m.y - near.y, m.x - near.x) + Math.sin(now / 450) * 0.7;
   tryMove(mMap, m, Math.cos(a) * def.speed, Math.sin(a) * def.speed, 10);
@@ -2204,18 +2219,7 @@ function tick() {
         }
       }
     } else {
-      // ohne Ziel langsam durch die Zone wandern
-      const now = Date.now();
-      if (!m.wanderUntil || now > m.wanderUntil) {
-        m.wanderUntil = now + 3000 + Math.random() * 6000;
-        m.wanderAngle = Math.random() < 0.3 ? null : Math.random() * Math.PI * 2;
-      }
-      if (m.wanderAngle !== null) {
-        const r = Math.min(MONSTER_TYPES[m.type].radius, 14);
-        const ox = m.x, oy = m.y;
-        tryMove(mMap, m, Math.cos(m.wanderAngle) * 0.45, Math.sin(m.wanderAngle) * 0.45, r);
-        if (m.x === ox && m.y === oy) m.wanderUntil = 0;
-      }
+      wanderIdle(m, mMap);
     }
   }
 
