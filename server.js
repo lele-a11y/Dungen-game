@@ -22,6 +22,7 @@ const path = require('path');
 const { Server } = require('socket.io');
 const { MongoClient } = require('mongodb');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -59,6 +60,13 @@ async function loadAccount(username) {
   return accountsCol.findOne({ username });
 }
 
+const SESSION_TOKEN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+async function loadAccountByToken(token) {
+  if (!accountsCol) return null;
+  return accountsCol.findOne({ sessionToken: token });
+}
+
 async function createAccount(username, passwordHash, cls) {
   const doc = {
     username, passwordHash, cls,
@@ -81,7 +89,8 @@ async function saveAccountProgress(p) {
         level: p.level, xp: p.xp, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions, cls: p.cls,
         upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, quests: p.quests || [],
         inventory: p.inventory || [], equipment: p.equipment || {}, skills: p.skills || {}, essence: p.essence || 0,
-        cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || []
+        cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [],
+        zone: p.zone, x: p.x, y: p.y, zonePos: p.zonePos || {}
       } }
     );
   } catch (err) {
@@ -355,6 +364,31 @@ function randomTierSpawn(zone) {
   const t = randomFloorTile(zone || DEFAULT_TIER_KEY);
   return { x: t.x * TILE + TILE / 2, y: t.y * TILE + TILE / 2 };
 }
+
+function nearestWalkable(zone, x, y) {
+  const m = mapFor(zone);
+  const cx = Math.floor(x / TILE), cy = Math.floor(y / TILE);
+  for (let r = 0; r <= 10; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const tx = cx + dx, ty = cy + dy;
+        if (m.isFloor(tx, ty)) return { x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 };
+      }
+    }
+  }
+  return null;
+}
+
+// Beim Zonenwechsel die Position merken und beim Wiedereintritt restaurieren
+function travelToZone(p, zone, fallback) {
+  p.zonePos[p.zone] = { x: p.x, y: p.y };
+  const saved = p.zonePos[zone];
+  const m = mapFor(zone);
+  const sp = (saved && !circleHitsWall(m, saved.x, saved.y, 12) ? saved : saved && nearestWalkable(zone, saved.x, saved.y)) || fallback;
+  p.zone = zone;
+  p.x = sp.x; p.y = sp.y;
+}
 const ARENA_SPAWN_TILE = ARENA.floor[Math.floor(ARENA.floor.length / 2)];
 const ARENA_SPAWN = { x: ARENA_SPAWN_TILE.x * TILE + TILE / 2, y: ARENA_SPAWN_TILE.y * TILE + TILE / 2 };
 const BOSSROOM_ENTRY_TILE = BOSSROOM.floor[Math.floor(BOSSROOM.floor.length * 0.15)];
@@ -424,7 +458,7 @@ const MONSTER_TYPES = {
   archer:  { hp: 45, dmg: 11, speed: 0.95, xp: 22, range: 260, cooldown: 1700, color: '#c9a66b', radius: 11, ranged: { speed: 6, life: 60, color: '#f1e3b0' } },
   caster:  { hp: 60, dmg: 17, speed: 0.8, xp: 38, range: 300, cooldown: 2300, color: '#9b4dca', radius: 12, effect: 'burn', ranged: { speed: 4.5, life: 80, color: '#ff8a3c' } },
   spitter: { hp: 70, dmg: 13, speed: 0.7, xp: 30, range: 240, cooldown: 2000, color: '#7bd05a', radius: 13, effect: 'poison', ranged: { speed: 4, life: 75, color: '#8fff6b' } },
-  boss:   { hp: 900, dmg: 32, speed: 1.0, xp: 400, range: 48, cooldown: 900, color: '#c0392b', radius: 26, name: 'Dungeon-Wächter' }
+  boss:   { hp: 900, dmg: 32, speed: 1.5, xp: 400, range: 48, cooldown: 900, color: '#c0392b', radius: 26, name: 'Dungeon-Wächter' }
 };
 const MAX_MONSTERS_PER_TIER = 60;
 
@@ -513,6 +547,32 @@ function tryMove(mapInfo, entity, dx, dy, radius) {
   if (!circleHitsWall(mapInfo, entity.x, ny, radius)) entity.y = ny;
 }
 
+// Langsam durch die Zone wandern, wenn kein Ziel in Reichweite ist
+function wanderIdle(m, mMap) {
+  const now = Date.now();
+  if (!m.wanderUntil || now > m.wanderUntil) {
+    m.wanderUntil = now + 3000 + Math.random() * 6000;
+    // neues Ziel max. +/- 90 Grad vom bisherigen Kurs
+    m.wanderTarget = m.wanderTarget == null
+      ? Math.random() * Math.PI * 2
+      : m.wanderTarget + (Math.random() - 0.5) * Math.PI;
+  }
+  // sanft auf den Zielwinkel eindrehen statt in einem Tick zu flippen
+  if (m.wanderAngle == null) m.wanderAngle = m.wanderTarget;
+  const diff = Math.atan2(Math.sin(m.wanderTarget - m.wanderAngle), Math.cos(m.wanderTarget - m.wanderAngle));
+  m.wanderAngle += Math.max(-0.1, Math.min(0.1, diff));
+  const r = Math.min(MONSTER_TYPES[m.type].radius, 14);
+  let spd = 0.45;
+  if (m.type === 'boss') {
+    let nearD = Infinity;
+    for (const pid in players) { const p = players[pid]; if (p.dead || p.zone !== (m.zone || DEFAULT_TIER_KEY)) continue; const d = dist(m.x, m.y, p.x, p.y); if (d < nearD) nearD = d; }
+    spd = nearD > 600 ? 3.5 : 1.0;
+  }
+  const ox = m.x, oy = m.y;
+  tryMove(mMap, m, Math.cos(m.wanderAngle) * spd, Math.sin(m.wanderAngle) * spd, r);
+  if (m.x === ox && m.y === oy) m.wanderUntil = 0;
+}
+
 // ---------------- Truhen ----------------
 const CHEST_COUNT_PER_TIER = 10;
 const CHEST_RESPAWN_MS = 90000;
@@ -554,6 +614,7 @@ function respawnPlayer(p) {
     sp = BOSSROOM_ENTRY;
   } else {
     // Beim Respawn automatisch in die zum aktuellen Level passende Stufe wechseln
+    p.zonePos[p.zone] = { x: p.x, y: p.y };
     p.zone = tierForLevel(p.level);
     sp = randomTierSpawn(p.zone);
   }
@@ -1248,7 +1309,7 @@ function updateTreasure(id, m, mMap) {
     const d = dist(m.x, m.y, p.x, p.y);
     if (d < nd) { nd = d; near = p; }
   }
-  if (!near) return;
+  if (!near) { wanderIdle(m, mMap); return; }
   const def = MONSTER_TYPES.treasure;
   const a = Math.atan2(m.y - near.y, m.x - near.x) + Math.sin(now / 450) * 0.7;
   tryMove(mMap, m, Math.cos(a) * def.speed, Math.sin(a) * def.speed, 10);
@@ -1358,55 +1419,71 @@ io.on('connection', (socket) => {
       const username = (data && data.username ? String(data.username) : '').trim().toLowerCase().slice(0, 20);
       const password = data && data.password ? String(data.password) : '';
       const name = (data && data.name ? String(data.name) : username).trim().slice(0, 16) || 'Held';
+      const token = data && typeof data.token === 'string' ? data.token.slice(0, 128) : '';
       const key = clientKey(socket);
       const blocked = authBlockedSeconds(key);
       if (blocked) return socket.emit('authError', `Zu viele Fehlversuche. Bitte warte ${blocked} Sekunden.`);
 
-      if (!username || username.length < 3) {
-        return socket.emit('authError', 'Benutzername muss mind. 3 Zeichen haben.');
-      }
-      if (!password || password.length < 4) {
-        return socket.emit('authError', 'Passwort muss mind. 4 Zeichen haben.');
-      }
       if (!accountsCol) {
         return socket.emit('authError', 'Datenbank nicht verbunden - Accounts sind aktuell deaktiviert. (MONGO_URI fehlt auf dem Server)');
       }
 
-      let account = await loadAccount(username);
-
-      if (mode === 'register') {
-        if (account) return socket.emit('authError', 'Dieser Benutzername ist bereits vergeben.');
-        if (!regAllowed(key)) return socket.emit('authError', 'Zu viele Registrierungen von dieser Adresse. Bitte später erneut versuchen.');
-        const classKey = CLASSES[data && data.cls] ? data.cls : 'krieger';
-        const hash = await bcrypt.hash(password, 10);
-        account = await createAccount(username, hash, classKey);
-      } else {
-        if (!account) { authFail(key); return socket.emit('authError', 'Diesen Account gibt es nicht. Bitte zuerst registrieren.'); }
-        const ok = await bcrypt.compare(password, account.passwordHash);
-        if (!ok) { authFail(key); return socket.emit('authError', 'Falsches Passwort.'); }
+      let account;
+      if (token) {
+        account = await loadAccountByToken(token);
+        const tokenAge = account ? Date.now() - new Date(account.sessionTokenAt || 0).getTime() : Infinity;
+        if (!account || tokenAge > SESSION_TOKEN_MAX_AGE_MS) { authFail(key); return socket.emit('authError', 'Sitzung abgelaufen - bitte erneut anmelden.'); }
         authOk(key);
-        if (account.banned) return socket.emit('authError', 'Dieser Account ist gesperrt.');
-        // Nur eine Sitzung pro Account: die alte wird gespeichert und beendet (verhindert Item-Duplikate)
-        const existing = findOnline(username);
-        if (existing) {
-          await saveAccountProgress(existing);
-          delete players[existing.id];
-          leaveParty(existing);
-          io.to(existing.id).emit('kicked', 'Du hast dich an einem anderen Ort angemeldet.');
-          disconnectSocket(existing.id);
-          account = await loadAccount(username);
+      } else {
+        if (!username || username.length < 3) {
+          return socket.emit('authError', 'Benutzername muss mind. 3 Zeichen haben.');
+        }
+        if (!password || password.length < 4) {
+          return socket.emit('authError', 'Passwort muss mind. 4 Zeichen haben.');
+        }
+        account = await loadAccount(username);
+        if (mode === 'register') {
+          if (account) return socket.emit('authError', 'Dieser Benutzername ist bereits vergeben.');
+          if (!regAllowed(key)) return socket.emit('authError', 'Zu viele Registrierungen von dieser Adresse. Bitte später erneut versuchen.');
+          const classKey = CLASSES[data && data.cls] ? data.cls : 'krieger';
+          const hash = await bcrypt.hash(password, 10);
+          account = await createAccount(username, hash, classKey);
+        } else {
+          if (!account) { authFail(key); return socket.emit('authError', 'Diesen Account gibt es nicht. Bitte zuerst registrieren.'); }
+          const ok = await bcrypt.compare(password, account.passwordHash);
+          if (!ok) { authFail(key); return socket.emit('authError', 'Falsches Passwort.'); }
+          authOk(key);
         }
       }
 
+      if (account.banned) return socket.emit('authError', 'Dieser Account ist gesperrt.');
+      // Nur eine Sitzung pro Account: die alte wird gespeichert und beendet (verhindert Item-Duplikate)
+      const existing = findOnline(account.username);
+      if (existing) {
+        await saveAccountProgress(existing);
+        delete players[existing.id];
+        leaveParty(existing);
+        io.to(existing.id).emit('kicked', 'Du hast dich an einem anderen Ort angemeldet.');
+        disconnectSocket(existing.id);
+        account = await loadAccount(account.username);
+      }
+
+      const sessionToken = crypto.randomBytes(32).toString('hex');
+      await accountsCol.updateOne({ username: account.username }, { $set: { sessionToken, sessionTokenAt: new Date() } });
+
       const stats = statsForLevel(account.cls, account.level);
-      const loginTier = tierForLevel(account.level);
-      const loginSpawn = randomTierSpawn(loginTier);
+      const savedZoneOk = isDungeonTier(account.zone) && account.level >= DUNGEON_TIERS[account.zone].minLevel;
+      const loginTier = savedZoneOk ? account.zone : tierForLevel(account.level);
+      const savedPos = savedZoneOk && typeof account.x === 'number' && typeof account.y === 'number'
+        ? nearestWalkable(loginTier, account.x, account.y) : null;
+      const loginSpawn = savedPos || randomTierSpawn(loginTier);
       players[socket.id] = {
         id: socket.id,
-        username,
-        name: name || username,
+        username: account.username,
+        name: token ? account.username : (name || account.username),
         cls: account.cls,
         zone: loginTier,
+        zonePos: account.zonePos || {},
         x: loginSpawn.x,
         y: loginSpawn.y,
         hp: stats.maxHp,
@@ -1423,7 +1500,7 @@ io.on('connection', (socket) => {
         upgDmg: account.upgDmg || 0,
         upgHp: account.upgHp || 0,
         upgSpeed: account.upgSpeed || 0,
-        isAdmin: ADMIN_USERNAMES.has(username),
+        isAdmin: ADMIN_USERNAMES.has(account.username),
         abilityReadyAt: 0,
         critUntil: 0,
         quests: sanitizeQuests(account.quests),
@@ -1451,7 +1528,8 @@ io.on('connection', (socket) => {
         bossRoomMap: BOSSROOM_ROWS,
         tile: TILE,
         classes: CLASSES,
-        isAdmin: players[socket.id].isAdmin
+        isAdmin: players[socket.id].isAdmin,
+        token: sessionToken
       });
       sendQuests(players[socket.id]);
       sendProfile(players[socket.id]);
@@ -1541,17 +1619,15 @@ io.on('connection', (socket) => {
   socket.on('joinArena', () => {
     const p = players[socket.id];
     if (!p || p.dead) return;
-    p.zone = 'arena';
-    p.x = ARENA_SPAWN.x; p.y = ARENA_SPAWN.y;
+    travelToZone(p, 'arena', ARENA_SPAWN);
     p.hp = p.maxHp;
   });
 
   socket.on('leaveArena', () => {
     const p = players[socket.id];
     if (!p) return;
-    p.zone = tierForLevel(p.level);
-    const sp = randomTierSpawn(p.zone);
-    p.x = sp.x; p.y = sp.y;
+    const t = tierForLevel(p.level);
+    travelToZone(p, t, randomTierSpawn(t));
     p.hp = p.maxHp;
     p.dead = false;
   });
@@ -1560,17 +1636,15 @@ io.on('connection', (socket) => {
     const p = players[socket.id];
     if (!p || p.dead) return;
     if (!bossId || !monsters[bossId]) return socket.emit('shopError', 'Aktuell ist kein Boss aktiv.');
-    p.zone = 'bossroom';
-    p.x = BOSSROOM_ENTRY.x; p.y = BOSSROOM_ENTRY.y;
+    travelToZone(p, 'bossroom', BOSSROOM_ENTRY);
     p.hp = p.maxHp;
   });
 
   socket.on('leaveBossRoom', () => {
     const p = players[socket.id];
     if (!p) return;
-    p.zone = tierForLevel(p.level);
-    const sp = randomTierSpawn(p.zone);
-    p.x = sp.x; p.y = sp.y;
+    const t = tierForLevel(p.level);
+    travelToZone(p, t, randomTierSpawn(t));
     p.hp = p.maxHp;
     p.dead = false;
   });
@@ -1594,6 +1668,7 @@ io.on('connection', (socket) => {
     delete tpaRequests[socket.id];
     if (!requester || requester.dead) return;
 
+    requester.zonePos[requester.zone] = { x: requester.x, y: requester.y };
     requester.zone = p.zone;
     requester.x = p.x + (Math.random() * 30 - 15);
     requester.y = p.y + (Math.random() * 30 - 15);
@@ -1936,9 +2011,7 @@ io.on('connection', (socket) => {
     if (p.level < tierDef.minLevel) {
       return socket.emit('shopError', `Benötigt Level ${tierDef.minLevel} (du bist Level ${p.level}).`);
     }
-    p.zone = key;
-    const sp = randomTierSpawn(key);
-    p.x = sp.x; p.y = sp.y;
+    travelToZone(p, key, randomTierSpawn(key));
     p.hp = p.maxHp;
     p.dead = false;
   });
@@ -2106,6 +2179,13 @@ io.on('connection', (socket) => {
     io.emit('announcement', `👑 ${p.name} hat den Boss sofort herbeigerufen!`);
   });
 
+  socket.on('logout', async () => {
+    const p = players[socket.id];
+    if (p && accountsCol) {
+      try { await accountsCol.updateOne({ username: p.username }, { $unset: { sessionToken: '', sessionTokenAt: '' } }); } catch (e) {}
+    }
+  });
+
   socket.on('disconnect', () => {
     const p = players[socket.id];
     if (p) saveAccountProgress(p);
@@ -2204,12 +2284,7 @@ function tick() {
         }
       }
     } else {
-      // zurueck zum Ausgangspunkt schlendern
-      const d = dist(m.x, m.y, m.homeX, m.homeY);
-      if (d > 10) {
-        const angle = Math.atan2(m.homeY - m.y, m.homeX - m.x);
-        tryMove(mMap, m, Math.cos(angle) * 0.6, Math.sin(angle) * 0.6, Math.min(MONSTER_TYPES[m.type].radius, 14));
-      }
+      wanderIdle(m, mMap);
     }
   }
 
@@ -2223,7 +2298,7 @@ function tick() {
     const pMap = mapFor(pr.zone);
     if (pMap.isWall(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE))) hitSomething = true;
 
-    if (pr.hostile) {
+    if (!pr.dying && pr.hostile) {
       if (!hitSomething) {
         for (const pid in players) {
           const pl = players[pid];
@@ -2236,7 +2311,7 @@ function tick() {
           }
         }
       }
-    } else if (!hitSomething && pr.zone === 'arena') {
+    } else if (!pr.dying && !hitSomething && pr.zone === 'arena') {
       for (const pid in players) {
         const other = players[pid];
         if (pid === pr.ownerId || other.zone !== 'arena' || other.dead) continue;
@@ -2247,7 +2322,7 @@ function tick() {
           break;
         }
       }
-    } else if (!hitSomething) {
+    } else if (!pr.dying && !hitSomething) {
       for (const mid in monsters) {
         const m = monsters[mid];
         if ((m.zone || DEFAULT_TIER_KEY) !== pr.zone) continue;
@@ -2263,7 +2338,14 @@ function tick() {
         }
       }
     }
-    if (hitSomething || pr.life <= 0) delete projectiles[id];
+    if (hitSomething) {
+      io.emit('prBoom', { x: Math.round(pr.x), y: Math.round(pr.y), zone: pr.zone, hostile: !!pr.hostile, color: pr.hostile ? pr.color : undefined });
+      delete projectiles[id]; continue;
+    }
+    if (pr.life <= 0) {
+      if (pr.dying) delete projectiles[id];
+      else { pr.dying = true; pr.life = 9; pr.vx *= 0.35; pr.vy *= 0.35; }
+    }
   }
 
   broadcastState();
@@ -2273,11 +2355,11 @@ const NEAR = 1500;           // Sichtweite in Pixeln: nur was in der Naehe ist, 
 let lastRosterAt = 0;
 function leanOf(p) {
   return {
-    id: p.id, name: p.name, cls: p.cls, x: Math.round(p.x), y: Math.round(p.y), zone: p.zone,
+    id: p.id, name: p.name, cls: p.cls, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, zone: p.zone,
     hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level, dead: p.dead,
     color: p.cosmetics && p.cosmetics.color ? COSMETICS.color[p.cosmetics.color].hex : null,
     hat: p.cosmetics && p.cosmetics.hat ? COSMETICS.hat[p.cosmetics.hat].icon : null,
-    pet: p.pet, px: p.petPos ? Math.round(p.petPos.x) : null, py: p.petPos ? Math.round(p.petPos.y) : null,
+    pet: p.pet, px: p.petPos ? Math.round(p.petPos.x * 10) / 10 : null, py: p.petPos ? Math.round(p.petPos.y * 10) / 10 : null,
     fx: fxFlags(p),
     party: p.partyId || null,
     partyLeader: !!(p.partyId && parties[p.partyId] && parties[p.partyId].leader === p.id)
@@ -2305,11 +2387,11 @@ function broadcastState() {
   for (const id in monsters) {
     const m = monsters[id];
     const z = m.zone || DEFAULT_TIER_KEY;
-    bucket(z).monsters.push({ id: m.id, type: m.type, zone: z, name: m.name, x: Math.round(m.x), y: Math.round(m.y), hp: Math.round(m.hp), maxHp: m.maxHp });
+    bucket(z).monsters.push({ id: m.id, type: m.type, zone: z, name: m.name, x: Math.round(m.x * 10) / 10, y: Math.round(m.y * 10) / 10, hp: Math.round(m.hp), maxHp: m.maxHp });
   }
   for (const id in items) { const it = items[id]; bucket(it.zone || DEFAULT_TIER_KEY).items.push({ id: it.id, type: it.type, x: Math.round(it.x), y: Math.round(it.y), amount: it.amount, zone: it.zone }); }
   for (const id in chests) { const ch = chests[id]; bucket(ch.zone).chests.push({ id: ch.id, zone: ch.zone, x: Math.round(ch.x), y: Math.round(ch.y), looted: ch.looted }); }
-  for (const id in projectiles) { const pr = projectiles[id]; bucket(pr.zone).projectiles.push({ id: pr.id, x: Math.round(pr.x), y: Math.round(pr.y), zone: pr.zone, hostile: !!pr.hostile, color: pr.hostile ? pr.color : undefined }); }
+  for (const id in projectiles) { const pr = projectiles[id]; bucket(pr.zone).projectiles.push({ id: pr.id, x: Math.round(pr.x), y: Math.round(pr.y), zone: pr.zone, hostile: !!pr.hostile, color: pr.hostile ? pr.color : undefined, dying: pr.dying ? pr.life : undefined }); }
   const events = {
     goldRemaining: Math.max(0, goldEventUntil - now),
     xpRemaining: Math.max(0, xpEventUntil - now),
