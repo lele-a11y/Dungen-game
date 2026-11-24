@@ -1,4 +1,4 @@
-[Uploading README.md…]()
+[README.md](https://github.com/user-attachments/files/35361313/README.md)
 # Leo's Dungeon RPG – Setup & Deployment
 
 Echtzeit-Multiplayer-Dungeon-RPG (Node.js + Socket.io Server, Canvas-Client).
@@ -200,3 +200,45 @@ Die Datei enthält dein Datenbank-Passwort: **nie ins GitHub-Repo hochladen** (s
 - Name, Level und Hut sitzen direkt an der Figur, der Lebensbalken direkt darunter.
 - Bewegungen sind weich statt ruckelig, Böden und Wände haben Struktur und Schatten, Geschosse hinterlassen eine Leuchtspur, Treffer, Tode und Levelaufstiege erzeugen Partikel, Boss-Schläge und eigene Treffer wackeln die Kamera leicht.
 - Im Menü unter "Grafik" lässt sich zwischen Hoch und Niedrig (schneller) wechseln. Auf Handys startet das Spiel standardmässig mit Niedrig.
+
+## Handy-Bedienung
+
+- **Schwebender Joystick:** Tippe irgendwo in der linken Bildschirmhälfte, der Joystick erscheint unter deinem Daumen.
+- **Angriffsknopf:** Gedrückt halten = Dauerangriff. Das Spiel zielt dabei automatisch auf den nächsten Gegner (in der Arena auf den nächsten Spieler).
+- Bewegen und Angreifen gleichzeitig funktioniert (früher las der Joystick den falschen Finger).
+- **Chat:** Menü → "Nachricht schreiben" (`/g` für die Gruppe, `/gc` für die Gilde). Menü → "Vollbild", wenn der Browser es kann.
+- Zoomen und versehentliches Markieren sind abgeschaltet, Tippflächen sind grösser, Randbereiche (Notch) werden freigehalten. Im Hochformat erscheint ein Hinweis, dass Querformat bequemer ist.
+
+## Balance
+
+- Gegner sind in jedem Dungeon so stark, dass ein normaler Gegner am Dungeon-Anfang etwa 2 bis 4 Sekunden braucht und du etwa 9 bis 19 Sekunden gegen einen einzelnen überlebst (Krieger ohne Ausrüstung). Grosse Nahkämpfer (Ork, Troll, Dämon) sind Elitegegner.
+- Die Klassen machen pro Sekunde etwa gleich viel Schaden (Schaden aus Level, Waffe und Upgrades skaliert mit der Angriffsgeschwindigkeit), dafür unterscheiden sich Leben, Tempo und Reichweite.
+- Gold-Belohnungen wurden angepasst, Bosse schlagen etwas langsamer und weniger hart zu (Gruppeninhalt).
+- Alle Werte stehen oben in `server.js`: `DUNGEON_TIER_DEFS` (Gegnerstärke, Schadensfaktor, Beute), `CLASSES` und `MONSTER_TYPES`.
+
+## Boss-Fähigkeiten
+
+Jeder Boss hat neben dem Bodenschlag eigene Angriffe (mit Warnzeichen):
+
+| Dungeon | Boss | Fähigkeiten |
+|---|---|---|
+| Moosige Höhle | Moosriese | Verstärkung rufen, Wutphase |
+| Verlassene Mine | Minenwächter | Steinschlag, Wutphase |
+| Katakomben | Knochenfürst | Verstärkung, Geschossfächer |
+| Eishöhlen | Frostkoloss | Fächer (verlangsamt), Steinschlag |
+| Vulkan-Festung | Magmatitan | Steinschlag, Fächer (Brand), Wutphase |
+| Der Abgrund | Abgrundherrscher | alles (Fächer vergiftet) |
+| Boss-Raum | Dungeon-Wächter | Verstärkung, Fächer, Wutphase |
+
+Unter 30% Leben tobt ein Boss: schneller, härter, Angriffe öfter. Seine Verstärkungen verschwinden mit ihm.
+
+## Gilden (Menü → Soziales → Gilde)
+
+- Gründen kostet 500 Gold (Name 3–16 Zeichen, Kürzel 2–4). Bis zu 20 Mitglieder, jedes Mitglied darf einladen, der Anführer kann Mitglieder entfernen und die Gilde auflösen. Verlässt der Anführer die Gilde, übernimmt das nächste Mitglied.
+- Das Kürzel steht in eckigen Klammern vor dem Namen. Gildenchat mit `/gc Text`.
+- Bonus: +5% XP pro Gildenmitglied in deiner Nähe (höchstens +15%).
+- Gilden liegen in der Datenbank (Sammlung `guilds`).
+
+## Musik
+
+Wird im Browser erzeugt, ohne Dateien: Jeder Dungeon, die Arena und der Boss-Raum haben eine eigene Tonart und Stimmung, Arena, Boss-Raum und Vulkan-Festung zusätzlich einen Puls. Im Menü getrennt von den Soundeffekten ein- und ausschaltbar.
