@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Leo's Dungeon RPG</title>
 <style>
   :root{
@@ -47,13 +47,6 @@
   .barLabel { display:flex; justify-content:space-between; font-size:11px; margin-bottom:3px; color:#ccc; }
   .barOuter { height:9px; background:#000000aa; border-radius:5px; overflow:hidden; }
   .barInner { height:100%; }
-  .barBox { position:relative; }
-  .barPixel { position:absolute; width:4px; height:4px; pointer-events:none; z-index:3;
-    animation:barPixel .7s ease-out forwards; }
-  @keyframes barPixel {
-    0% { transform:translate(0,0) scale(1); opacity:1; }
-    100% { transform:translate(var(--dx), var(--dy)) scale(.3); opacity:0; }
-  }
   #statsRow { display:flex; gap:10px; margin-top:2px; font-size:12px; color:#e6d38a; }
 
   #hitFlash {
@@ -119,13 +112,10 @@
   }
   #menuPanel h2 { margin:0 0 14px; color:var(--accent); font-size:18px; text-align:center; }
   .menuOption {
-    width:100%; padding:11px; margin-bottom:5px; border-radius:8px; border:1px solid #2a2f3a;
+    width:100%; padding:11px; margin-bottom:8px; border-radius:8px; border:1px solid #2a2f3a;
     background:#0d1117; color:#eee; cursor:pointer; font-size:13px; text-align:left;
   }
   .menuOption:hover { border-color: var(--accent); }
-  .menuGroup { margin:12px 0 4px; color:#8892a0; font-size:10px; text-transform:uppercase; letter-spacing:1.2px; }
-  .menuSep { border-top:1px solid #2a2f3a; margin:12px 0 10px; }
-  #menuOptionClose { border-color: var(--accent); color: var(--accent); }
   #menuOptionLeave { color:#ff8a8a; }
 
   #pvpPanel {
@@ -339,6 +329,39 @@
   #mAttack { background:#7a2e2e99; }
   #mPotion { background:#2e5c3299; font-size:18px; }
   #mSpeed { background:#5c4a2e99; font-size:18px; }
+  /* ---- Handy-Feinschliff ---- */
+  html, body { touch-action: manipulation; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+  body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  input { -webkit-user-select: text; user-select: text; }
+  #joyZone { position:absolute; left:0; bottom:0; width:38%; height:78%; z-index:12; touch-action:none; }
+  #joyBase { pointer-events:none; left:max(26px, env(safe-area-inset-left)); }
+  #mobileActions { right:max(20px, env(safe-area-inset-right)); flex-wrap:wrap-reverse; max-height:78vh; align-content:flex-end; }
+  #interactBtn { z-index:14; }
+  #orientHint { display:none; position:absolute; top:6px; left:50%; transform:translateX(-50%); z-index:32; background:#0d1117ee; color:#ffe9a8; border:1px solid var(--accent); border-radius:14px; padding:5px 12px; font-size:11px; white-space:nowrap; }
+  #menuOptionChat { display:none; }
+  .touch-active #menuOptionChat { display:block; }
+  .touch-active #chatInput { display:none !important; }
+  .touch-active #chatBox { bottom:150px; width:min(280px, 58vw); max-height:84px; }
+  .touch-active .menuOption, .touch-active #bpBody button, .touch-active #bpTabs button, .touch-active .shopItem button,
+  .touch-active .adminSingleBtn, .touch-active #tiersPanel button, .touch-active #questsPanel button, .touch-active #bossroomPanel button, .touch-active #pvpPanel button {
+    min-height:40px; font-size:13px; padding:8px 12px;
+  }
+  .touch-active .itemRow .acts { gap:6px; }
+  .touch-active #bpBody { font-size:13px; }
+  #bigPanel { max-height: 90vh; max-height: 92dvh; }
+  #hud { top:max(10px, env(safe-area-inset-top)); left:max(10px, env(safe-area-inset-left)); }
+  #menuBtn { top:max(10px, env(safe-area-inset-top)); right:max(10px, env(safe-area-inset-right)); }
+  @media (max-width: 700px) {
+    .barBox { width:170px; }
+    #questHud, #partyHud { max-width:170px; }
+    #minimap { max-width:150px; height:auto; }
+  }
+  @media (max-height: 460px) {
+    .mBtn { width:52px; height:52px; font-size:19px; }
+    #mobileActions { gap:8px; bottom:16px; }
+    #joyBase { bottom:16px; }
+  }
+  @media (orientation: portrait) { .touch-active #orientHint { display:block; } }
 </style>
 </head>
 <body>
@@ -370,6 +393,7 @@
   <input id="chatInput" placeholder="Enter zum Chatten..." style="display:none;">
   <div id="hint" style="display:none;">WASD/Pfeile: Bewegen&nbsp;·&nbsp;Klick/Leertaste: Angriff&nbsp;·&nbsp;E: Trank&nbsp;·&nbsp;R: Tempo-Trank&nbsp;·&nbsp;Q: Fähigkeit&nbsp;·&nbsp;C: Charakter&nbsp;·&nbsp;B: Shop&nbsp;·&nbsp;F: Truhe&nbsp;·&nbsp;Esc: Menü</div>
 
+  <div id="orientHint">📱 Quer spielen ist bequemer</div>
   <button id="menuBtn">☰</button>
   <div id="zoneLabel"></div>
   <canvas id="minimap" width="220" height="50"></canvas>
@@ -385,23 +409,21 @@
 
   <div id="menuPanel">
     <h2>Menü</h2>
-    <div class="menuGroup">Welt</div>
+    <button class="menuOption" id="menuOptionShop">🏪 Shop</button>
+    <button class="menuOption" id="menuOptionPvp">⚔️ PvP-Lobby</button>
+    <button class="menuOption" id="menuOptionChar">🎒 Charakter (C)</button>
+    <button class="menuOption" id="menuOptionRank">🏆 Erfolge &amp; Rangliste</button>
+    <button class="menuOption" id="menuOptionSocial">👥 Soziales (Gruppe, Freunde)</button>
+    <button class="menuOption" id="menuOptionQuests">📜 Quests</button>
     <button class="menuOption" id="menuOptionTiers">🗺️ Dungeon wählen</button>
     <button class="menuOption" id="menuOptionBossroom">👑 Boss-Raum</button>
-    <button class="menuOption" id="menuOptionPvp">⚔️ PvP-Lobby</button>
-    <div class="menuGroup">Charakter</div>
-    <button class="menuOption" id="menuOptionChar">🎒 Charakter (C)</button>
-    <button class="menuOption" id="menuOptionQuests">📜 Quests</button>
-    <button class="menuOption" id="menuOptionRank">🏆 Erfolge &amp; Rangliste</button>
-    <button class="menuOption" id="menuOptionShop">🏪 Shop</button>
-    <div class="menuGroup">Soziales</div>
-    <button class="menuOption" id="menuOptionSocial">👥 Soziales (Gruppe, Freunde)</button>
     <button class="menuOption" id="menuOptionPlayers">🧭 Zu Spieler teleportieren</button>
-    <div class="menuGroup">Einstellungen</div>
-    <button class="menuOption" id="menuOptionGfx">🎨 Grafik: Hoch</button>
-    <button class="menuOption" id="menuOptionSound">🔊 Ton: an</button>
     <button class="menuOption" id="menuOptionAdmin" style="display:none;">👑 Admin-Panel</button>
-    <div class="menuSep"></div>
+    <button class="menuOption" id="menuOptionChat">💬 Nachricht schreiben</button>
+    <button class="menuOption" id="menuOptionFull">⛶ Vollbild</button>
+    <button class="menuOption" id="menuOptionGfx">🎨 Grafik: Hoch</button>
+    <button class="menuOption" id="menuOptionMusic">🎵 Musik: an</button>
+    <button class="menuOption" id="menuOptionSound">🔊 Ton: an</button>
     <button class="menuOption" id="menuOptionClose">▶️ Weiterspielen</button>
     <button class="menuOption" id="menuOptionLeave">🚪 Spiel verlassen</button>
   </div>
@@ -512,6 +534,7 @@
   </div>
 
   <div id="mobileControls">
+    <div id="joyZone"></div>
     <div id="joyBase"><div id="joyStick"></div></div>
     <div id="mobileActions">
       <div class="mBtn" id="mAttack">⚔️</div>
@@ -596,9 +619,7 @@ function shopCostClient(key, count) {
 }
 let shopOpen = false;
 function toggleShop(force) {
-  const want = (typeof force === 'boolean') ? force : !shopOpen;
-  if (want) closeAllPanels();
-  shopOpen = want;
+  shopOpen = (typeof force === 'boolean') ? force : !shopOpen;
   document.getElementById('shopPanel').style.display = shopOpen ? 'block' : 'none';
   if (shopOpen) renderShop();
 }
@@ -628,20 +649,9 @@ document.getElementById('shopClose').addEventListener('click', () => toggleShop(
 
 // ---------------- Menü ----------------
 let menuOpen = false;
-function closeAllPanels() {
-  toggleShop(false); toggleMenu(false); togglePvpPanel(false); toggleQuestsPanel(false);
-  toggleTiersPanel(false); toggleBossroomPanel(false); togglePlayersPanel(false); toggleAdminPanel(false); closeBig();
-}
 function toggleMenu(force) {
-  const want = (typeof force === 'boolean') ? force : !menuOpen;
-  if (want) closeAllPanels();
-  menuOpen = want;
+  menuOpen = (typeof force === 'boolean') ? force : !menuOpen;
   document.getElementById('menuPanel').style.display = menuOpen ? 'block' : 'none';
-  if (menuOpen) {
-    const me = world.players.find(p => p.id === myId);
-    document.getElementById('menuOptionPvp').textContent = me && me.zone === 'arena' ? '🏰 Dungeon' : '⚔️ PvP-Lobby';
-    document.getElementById('menuOptionBossroom').textContent = me && me.zone === 'bossroom' ? '🏰 Dungeon' : '👑 Boss-Raum';
-  }
 }
 document.getElementById('menuBtn').addEventListener('click', () => toggleMenu());
 document.getElementById('menuOptionClose').addEventListener('click', () => toggleMenu(false));
@@ -653,8 +663,7 @@ document.getElementById('menuOptionPlayers').addEventListener('click', () => { t
 document.getElementById('menuOptionAdmin').addEventListener('click', () => { toggleMenu(false); toggleAdminPanel(true); });
 document.getElementById('menuOptionLeave').addEventListener('click', () => {
   if (confirm('Spiel wirklich verlassen?')) {
-    try { localStorage.removeItem('dungeonSession'); } catch (e) {}
-    if (socket) { socket.emit('logout'); socket.disconnect(); }
+    if (socket) socket.disconnect();
     location.reload();
   }
 });
@@ -662,9 +671,7 @@ document.getElementById('menuOptionLeave').addEventListener('click', () => {
 // ---------------- PvP-Lobby ----------------
 let pvpOpen = false;
 function togglePvpPanel(force) {
-  const want = (typeof force === 'boolean') ? force : !pvpOpen;
-  if (want) closeAllPanels();
-  pvpOpen = want;
+  pvpOpen = (typeof force === 'boolean') ? force : !pvpOpen;
   document.getElementById('pvpPanel').style.display = pvpOpen ? 'block' : 'none';
   if (pvpOpen) renderPvpPanel();
 }
@@ -683,7 +690,7 @@ document.getElementById('pvpToggleBtn').addEventListener('click', () => {
   const me = world.players.find(p => p.id === myId);
   if (!me) return;
   socket.emit(me.zone === 'arena' ? 'leaveArena' : 'joinArena');
-  togglePvpPanel(false);
+  setTimeout(renderPvpPanel, 150);
 });
 document.getElementById('pvpClose').addEventListener('click', () => togglePvpPanel(false));
 
@@ -742,6 +749,98 @@ updateSoundBtn();
 window.addEventListener('pointerdown', ensureAudio);
 window.addEventListener('keydown', ensureAudio);
 
+// ---------------- Musik (wird im Browser erzeugt, ohne Dateien) ----------------
+let musicOn = true;
+try { musicOn = localStorage.getItem('dungeonMusic') !== 'off'; } catch (err) {}
+let masterGain = null, musicZone = null, musicNodes = null, nextNoteAt = 0, nextPulseAt = 0;
+const MUSIC_THEMES = {
+  tier1:    { root: 146.83, scale: [0, 2, 4, 7, 9],          step: 1900, vol: 1.0,  drone: 'triangle', pulse: 0 },
+  tier2:    { root: 110.00, scale: [0, 2, 3, 5, 7, 9, 10],   step: 1500, vol: 1.0,  drone: 'sawtooth', pulse: 0 },
+  tier3:    { root: 98.00,  scale: [0, 1, 3, 5, 7, 8, 10],   step: 1800, vol: 0.9,  drone: 'sine',     pulse: 0 },
+  tier4:    { root: 220.00, scale: [0, 2, 4, 6, 7, 9, 11],   step: 1300, vol: 0.9,  drone: 'sine',     pulse: 0, bell: true },
+  tier5:    { root: 82.41,  scale: [0, 1, 4, 5, 7, 8, 11],   step: 950,  vol: 1.0,  drone: 'sawtooth', pulse: 1900 },
+  tier6:    { root: 73.42,  scale: [0, 1, 3, 6, 7, 10],      step: 1400, vol: 0.95, drone: 'sawtooth', pulse: 0 },
+  arena:    { root: 110.00, scale: [0, 3, 5, 7, 10],         step: 520,  vol: 1.0,  drone: 'square',   pulse: 1040 },
+  bossroom: { root: 65.41,  scale: [0, 1, 3, 6, 7],          step: 640,  vol: 1.0,  drone: 'sawtooth', pulse: 1280 }
+};
+function noteFreq(theme, deg, oct) {
+  const n = theme.scale.length;
+  return theme.root * Math.pow(2, (theme.scale[deg % n] + 12 * (oct + Math.floor(deg / n))) / 12);
+}
+function ensureMaster() {
+  if (!audioCtx) return false;
+  if (!masterGain) { masterGain = audioCtx.createGain(); masterGain.gain.value = 0.9; masterGain.connect(audioCtx.destination); }
+  return true;
+}
+function startDrone(theme) {
+  const t = audioCtx.currentTime;
+  const g = audioCtx.createGain();
+  g.gain.value = 0; g.connect(masterGain);
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 420; lp.connect(g);
+  const o1 = audioCtx.createOscillator(), o2 = audioCtx.createOscillator();
+  o1.type = theme.drone; o2.type = theme.drone;
+  o1.frequency.value = theme.root; o2.frequency.value = theme.root * 1.5; o2.detune.value = 6;
+  o1.connect(lp); o2.connect(lp);
+  o1.start(); o2.start();
+  g.gain.linearRampToValueAtTime(0.035, t + 3);
+  return { stop() { try { const t1 = audioCtx.currentTime; g.gain.linearRampToValueAtTime(0, t1 + 2); o1.stop(t1 + 2.2); o2.stop(t1 + 2.2); } catch (err) {} } };
+}
+function musicNote(freq, dur, vol, type, delay) {
+  const t0 = audioCtx.currentTime + (delay || 0);
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(vol, t0 + 0.06);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(masterGain);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+function musicPulse() {
+  const t0 = audioCtx.currentTime;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(72, t0); o.frequency.exponentialRampToValueAtTime(38, t0 + 0.25);
+  g.gain.setValueAtTime(0.11, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+  o.connect(g); g.connect(masterGain);
+  o.start(t0); o.stop(t0 + 0.3);
+}
+function stopMusic() { if (musicNodes) { musicNodes.stop(); musicNodes = null; } musicZone = null; }
+function musicTick() {
+  if (!musicOn) { if (musicNodes) stopMusic(); return; }
+  if (!audioCtx || audioCtx.state === 'suspended' || !currentZone || !ensureMaster()) return;
+  const theme = MUSIC_THEMES[currentZone] || MUSIC_THEMES.tier1;
+  if (musicZone !== currentZone) {
+    if (musicNodes) musicNodes.stop();
+    musicNodes = startDrone(theme);
+    musicZone = currentZone;
+    nextNoteAt = 0; nextPulseAt = 0;
+  }
+  const now = Date.now();
+  if (now >= nextNoteAt) {
+    nextNoteAt = now + theme.step * (0.8 + Math.random() * 0.5);
+    if (Math.random() < 0.72) {
+      const oct = 1 + (Math.random() < 0.3 ? 1 : 0), deg = Math.floor(Math.random() * 7);
+      const type = theme.bell ? 'sine' : 'triangle', dur = theme.bell ? 2.0 : 1.3;
+      musicNote(noteFreq(theme, deg, oct), dur, 0.045 * theme.vol, type, 0);
+      if (Math.random() < 0.3) musicNote(noteFreq(theme, deg + 2, oct), dur, 0.03 * theme.vol, type, 0.18);
+    }
+  }
+  if (theme.pulse && now >= nextPulseAt) { nextPulseAt = now + theme.pulse; musicPulse(); }
+}
+setInterval(musicTick, 200);
+function updateMusicBtn() { document.getElementById('menuOptionMusic').textContent = musicOn ? '🎵 Musik: an' : '🔇 Musik: aus'; }
+document.getElementById('menuOptionMusic').addEventListener('click', () => {
+  musicOn = !musicOn;
+  try { localStorage.setItem('dungeonMusic', musicOn ? 'on' : 'off'); } catch (err) {}
+  updateMusicBtn();
+  if (musicOn) ensureAudio(); else stopMusic();
+});
+updateMusicBtn();
+document.addEventListener('visibilitychange', () => {
+  if (!audioCtx) return;
+  try { if (document.hidden) audioCtx.suspend(); else audioCtx.resume(); } catch (err) {}
+});
+
 // ---------------- Charakter, Erfolge, Rangliste ----------------
 let DEFS = {};
 let profile = null;
@@ -753,8 +852,9 @@ const BIG = {
   char: { title: '🎒 Charakter', tabs: [['equip', 'Ausrüstung'], ['skills', 'Fertigkeiten'], ['craft', 'Handwerk'], ['look', 'Aussehen']] },
   rank: { title: '🏆 Erfolge & Rangliste', tabs: [['ach', 'Erfolge'], ['level', 'Level'], ['kills', 'Kills'], ['boss', 'Bosse'], ['pvp', 'Arena']] }
 };
-BIG.social = { title: '👥 Soziales', tabs: [['group', 'Gruppe'], ['friends', 'Freunde']] };
+BIG.social = { title: '👥 Soziales', tabs: [['group', 'Gruppe'], ['friends', 'Freunde'], ['guild', 'Gilde']] };
 let myFriends = [];
+let myGuild = null;
 const promptQueue = [];
 function renderPrompt() {
   const box = document.getElementById('promptBox');
@@ -864,6 +964,21 @@ function bigBody() {
     h += others.length ? others.map(q => `<div class="itemRow"><div><b>${esc(q.name)}</b> <span class="muted">Level ${q.level} · ${esc(zoneLabel(q.zone))}</span></div>
       <div class="acts"><button data-act="partyInvite" data-arg="${q.id}" ${canInvite ? '' : 'disabled'}>Einladen</button></div></div>`).join('') : '<p class="muted">Niemand sonst ist online.</p>';
     h += '<p class="muted">Tipp: Mit <b>/g Text</b> im Chat schreibst du nur an deine Gruppe.</p>';
+  } else if (key === 'social:guild') {
+    if (myGuild) {
+      const iLead = myGuild.leader === myGuild.you;
+      h += `<div class="itemRow"><div><b>🏰 ${esc(myGuild.name)}</b> <span class="muted">[${esc(myGuild.tag)}] · ${myGuild.members.length}/20 Mitglieder</span>
+        <div class="meta">+5% XP pro Gildenmitglied in deiner Nähe (max. +15%) · Gildenchat: /gc Text</div></div>
+        <div class="acts"><button class="alt" data-act="guildLeave" data-arg="">Verlassen</button>${iLead ? '<button class="alt" data-act="guildDisband" data-arg="">Auflösen</button>' : ''}</div></div>`;
+      h += '<h3>Mitglieder</h3>' + myGuild.members.map(m => `<div class="itemRow" style="border-left-color:${m.online ? '#8ee08e' : '#2a2f3a'}"><div>${m.online ? '🟢' : '⚫'} ${m.username === myGuild.leader ? '👑 ' : ''}<b>${esc(m.online ? m.name : m.username)}</b> <span class="muted">${m.online ? 'Level ' + m.level : 'offline'}</span></div>
+        <div class="acts">${iLead && m.username !== myGuild.you ? `<button class="alt" data-act="guildKick" data-arg="${esc(m.username)}">Entfernen</button>` : ''}</div></div>`).join('');
+      const cand = world.players.filter(q => q.id !== myId && !q.tag);
+      h += '<h3>Spieler einladen</h3>' + (cand.length ? cand.map(q => `<div class="itemRow"><div><b>${esc(q.name)}</b> <span class="muted">Level ${q.level}</span></div><div class="acts"><button data-act="guildInvite" data-arg="${q.id}">Einladen</button></div></div>`).join('') : '<p class="muted">Niemand sonst ist online.</p>');
+    } else {
+      h += '<p class="muted">Du bist in keiner Gilde. Gründe eine (500 Gold) oder lass dich von einem Mitglied einladen.</p>';
+      h += `<div style="display:flex; gap:6px; margin:8px 0"><input id="guildName" type="text" maxlength="16" placeholder="Gildenname (3–16 Zeichen)" style="flex:1; padding:6px 8px; border-radius:6px; border:1px solid #333a47; background:#0d1117; color:#fff; font-size:12px"><input id="guildTag" type="text" maxlength="4" placeholder="Kürzel" style="width:74px; padding:6px 8px; border-radius:6px; border:1px solid #333a47; background:#0d1117; color:#fff; font-size:12px"></div>
+        <button data-act="guildCreate" data-arg="">Gilde gründen · 500🪙</button>`;
+    }
   } else if (key === 'social:friends') {
     h += `<div style="display:flex; gap:6px; margin-bottom:8px"><input id="friendInput" type="text" maxlength="20" placeholder="Benutzername" style="flex:1; padding:6px 8px; border-radius:6px; border:1px solid #333a47; background:#0d1117; color:#fff; font-size:12px"><button data-act="friendAdd" data-arg="">Hinzufügen</button></div>`;
     h += `<h3>Freunde (${myFriends.length}/50)</h3>`;
@@ -894,12 +1009,11 @@ function renderBig() {
   document.getElementById('bpBody').innerHTML = bigBody();
 }
 function openBig(kind, tab) {
-  closeAllPanels();
   bigKind = kind;
   bigTab = tab || BIG[kind].tabs[0][0];
   document.getElementById('bigPanel').style.display = 'flex';
   if (kind === 'rank' && bigTab !== 'ach') socket.emit('leaderboard', { cat: bigTab });
-  if (kind === 'social') socket.emit('friendsList');
+  if (kind === 'social') { socket.emit('friendsList'); socket.emit('guildInfo'); }
   renderBig();
 }
 function closeBig() { bigKind = null; document.getElementById('bigPanel').style.display = 'none'; }
@@ -911,6 +1025,7 @@ document.getElementById('bpTabs').addEventListener('click', (e) => {
   bigTab = b.dataset.tab;
   if (bigKind === 'rank' && bigTab !== 'ach') socket.emit('leaderboard', { cat: bigTab });
   if (bigKind === 'social' && bigTab === 'friends') socket.emit('friendsList');
+  if (bigKind === 'social' && bigTab === 'guild') socket.emit('guildInfo');
   renderBig();
 });
 const BIG_ACTIONS = {
@@ -924,6 +1039,14 @@ const BIG_ACTIONS = {
   buyCos: (a) => { const [kind, id] = a.split(':'); socket.emit('buyCosmetic', { kind, id }); },
   setCos: (a) => { const [kind, id] = a.split(':'); socket.emit('setCosmetic', { kind, id: id || null }); },
   buyPet: () => socket.emit('buyPet'),
+  guildCreate: () => {
+    const n = document.getElementById('guildName'), t = document.getElementById('guildTag');
+    if (n && t && n.value.trim()) socket.emit('guildCreate', { name: n.value.trim(), tag: t.value.trim() });
+  },
+  guildInvite: (a) => socket.emit('guildInvite', { targetId: a }),
+  guildKick: (a) => { if (confirm('Dieses Mitglied aus der Gilde entfernen?')) socket.emit('guildKick', { username: a }); },
+  guildLeave: () => { if (confirm('Die Gilde wirklich verlassen?')) socket.emit('guildLeave'); },
+  guildDisband: () => { if (confirm('Die Gilde wirklich für alle auflösen?')) socket.emit('guildDisband'); },
   partyInvite: (a) => socket.emit('partyInvite', { targetId: a }),
   partyKick: (a) => socket.emit('partyKick', { targetId: a }),
   partyLeave: () => socket.emit('partyLeave'),
@@ -954,9 +1077,7 @@ document.getElementById('menuOptionSocial').addEventListener('click', () => { to
 // ---------------- Quests ----------------
 let questsOpen = false;
 function toggleQuestsPanel(force) {
-  const want = (typeof force === 'boolean') ? force : !questsOpen;
-  if (want) closeAllPanels();
-  questsOpen = want;
+  questsOpen = (typeof force === 'boolean') ? force : !questsOpen;
   document.getElementById('questsPanel').style.display = questsOpen ? 'block' : 'none';
   if (questsOpen) renderQuestsPanel();
 }
@@ -983,9 +1104,7 @@ document.getElementById('menuOptionQuests').addEventListener('click', () => { to
 // ---------------- Dungeon-Stufen ----------------
 let tiersOpen = false;
 function toggleTiersPanel(force) {
-  const want = (typeof force === 'boolean') ? force : !tiersOpen;
-  if (want) closeAllPanels();
-  tiersOpen = want;
+  tiersOpen = (typeof force === 'boolean') ? force : !tiersOpen;
   document.getElementById('tiersPanel').style.display = tiersOpen ? 'block' : 'none';
   document.getElementById('tiersMsg').textContent = '';
   if (tiersOpen) renderTiersPanel();
@@ -1006,7 +1125,7 @@ function renderTiersPanel() {
   list.querySelectorAll('button[data-tier]').forEach(btn => {
     btn.addEventListener('click', () => {
       socket.emit('travelToTier', { tier: btn.dataset.tier });
-      toggleTiersPanel(false);
+      setTimeout(renderTiersPanel, 200);
     });
   });
 }
@@ -1015,9 +1134,7 @@ document.getElementById('tiersClose').addEventListener('click', () => toggleTier
 // ---------------- Boss-Raum ----------------
 let bossroomOpen = false;
 function toggleBossroomPanel(force) {
-  const want = (typeof force === 'boolean') ? force : !bossroomOpen;
-  if (want) closeAllPanels();
-  bossroomOpen = want;
+  bossroomOpen = (typeof force === 'boolean') ? force : !bossroomOpen;
   document.getElementById('bossroomPanel').style.display = bossroomOpen ? 'block' : 'none';
   if (bossroomOpen) renderBossroomPanel();
 }
@@ -1041,16 +1158,14 @@ document.getElementById('bossroomToggleBtn').addEventListener('click', () => {
   const me = world.players.find(p => p.id === myId);
   if (!me) return;
   socket.emit(me.zone === 'bossroom' ? 'leaveBossRoom' : 'joinBossRoom');
-  toggleBossroomPanel(false);
+  setTimeout(renderBossroomPanel, 150);
 });
 document.getElementById('bossroomClose').addEventListener('click', () => toggleBossroomPanel(false));
 
 // ---------------- Spieler-Teleport ----------------
 let playersPanelOpen = false;
 function togglePlayersPanel(force) {
-  const want = (typeof force === 'boolean') ? force : !playersPanelOpen;
-  if (want) closeAllPanels();
-  playersPanelOpen = want;
+  playersPanelOpen = (typeof force === 'boolean') ? force : !playersPanelOpen;
   document.getElementById('playersPanel').style.display = playersPanelOpen ? 'block' : 'none';
   if (playersPanelOpen) renderPlayersPanel();
 }
@@ -1104,9 +1219,7 @@ function renderAdminPlayers() {
   box.innerHTML = others.length ? others.map(q => '<div class="pl"><span>' + esc(q.name) + ' (Lv' + q.level + ')</span><span><button data-kick="' + q.id + '">Kick</button><button data-ban="' + q.id + '">Sperren</button></span></div>').join('') : '<span class="muted" style="font-size:11px">Niemand sonst online.</span>';
 }
 function toggleAdminPanel(force) {
-  const want = (typeof force === 'boolean') ? force : !adminOpen;
-  if (want) closeAllPanels();
-  adminOpen = want;
+  adminOpen = (typeof force === 'boolean') ? force : !adminOpen;
   if (adminOpen) renderAdminPlayers();
   document.getElementById('adminPanel').style.display = adminOpen ? 'block' : 'none';
 }
@@ -1178,39 +1291,28 @@ document.querySelectorAll('.classBtn').forEach(btn => {
 });
 
 document.getElementById('playBtn').addEventListener('click', startGame);
-for (const id of ['userInput', 'passInput', 'nameInput']) {
-  document.getElementById(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') startGame(); });
-}
+document.getElementById('passInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') startGame(); });
 
 let authSocket = null;
-function startGame(authData) {
+function startGame() {
+  const username = document.getElementById('userInput').value.trim();
+  const password = document.getElementById('passInput').value;
+  const name = document.getElementById('nameInput').value.trim() || username;
   const msgBox = document.getElementById('authMsg');
   msgBox.textContent = '';
 
-  let auth;
-  if (authData && authData.token) {
-    auth = { token: authData.token };
-  } else {
-    const username = document.getElementById('userInput').value.trim();
-    const password = document.getElementById('passInput').value;
-    const name = document.getElementById('nameInput').value.trim() || username;
-    if (!username || username.length < 3) { msgBox.textContent = 'Benutzername braucht mind. 3 Zeichen.'; return; }
-    if (!password || password.length < 4) { msgBox.textContent = 'Passwort braucht mind. 4 Zeichen.'; return; }
-    auth = { mode: authMode, username, password, name, cls: selectedClass };
-  }
+  if (!username || username.length < 3) { msgBox.textContent = 'Benutzername braucht mind. 3 Zeichen.'; return; }
+  if (!password || password.length < 4) { msgBox.textContent = 'Passwort braucht mind. 4 Zeichen.'; return; }
 
   document.getElementById('playBtn').disabled = true;
 
   socket = io();
   socket.on('authError', (msg) => {
-    try { localStorage.removeItem('dungeonSession'); } catch (e) {}
     msgBox.textContent = msg;
     document.getElementById('playBtn').disabled = false;
   });
   socket.on('init', (data) => {
-    try { if (data.token) localStorage.setItem('dungeonSession', data.token); } catch (e) {}
     myId = data.you; DUNGEON_TIERS = data.dungeonTiers || {}; MONSTER_DEFS = data.monsterDefs || {}; ABILITIES = data.abilities || {}; DEFS = data.defs || {}; ARENA_MAP = data.arenaMap; BOSSROOM_MAP = data.bossRoomMap; TILE = data.tile; CLASSES = data.classes;
-    loadExplored();
     isAdmin = !!data.isAdmin;
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'flex';
@@ -1250,11 +1352,7 @@ function startGame(authData) {
     const mp = myPlayer();
     if (mp && dist(mp.x, mp.y, h.x, h.y) < 450) sfx('hit', 70);
   });
-  socket.on('prBoom', (b) => {
-    if (b.zone !== currentZone) return;
-    const mp = myPlayer();
-    if (mp && dist(mp.x, mp.y, b.x, b.y) < 600) spawnParticles(b.x, b.y, b.color || (b.hostile ? '#ff6b3c' : '#7fdcff'), 12, 2.8, 0.55, 2.5);
-  });
+  socket.on('bossCast', (r) => { slamFx.push({ x: r.x, y: r.y, r: 46, zone: r.zone, ms: r.ms, at: Date.now(), cast: true }); if (r.zone === currentZone) sfx('warn', 200); });
   socket.on('bossSlam', (r) => {
     slamFx.push({ ...r, at: Date.now() });
     if (r.zone === currentZone) { sfx('warn', 200); setTimeout(() => sfx('slam', 200), r.ms); }
@@ -1285,9 +1383,11 @@ function startGame(authData) {
 
   socket.on('profile', (pr) => { profile = pr; if (bigKind) renderBig(); });
   socket.on('friends', (list) => { myFriends = list || []; if (bigKind === 'social') renderBig(); });
+  socket.on('guild', (g) => { myGuild = g || null; if (bigKind === 'social') renderBig(); });
+  socket.on('guildInvited', (r) => showPrompt('guild', '🏰 ' + r.fromName + ' lädt dich in die Gilde „' + r.guildName + '“ [' + r.tag + '] ein', () => socket.emit('guildAccept'), () => socket.emit('guildDecline'), 45000));
   socket.on('partyInvited', (r) => showPrompt('party', '👥 ' + r.fromName + ' lädt dich in eine Gruppe ein', () => socket.emit('partyAccept'), () => socket.emit('partyDecline'), 30000));
   socket.on('tradeIncoming', (r) => showPrompt('trade', '🤝 ' + r.fromName + ' bietet „' + r.item.name + '“ (' + DEFS.rarities[r.item.rarity].name + ', ' + statsText(r.item.e) + (r.item.up ? ', +' + r.item.up : '') + ') für ' + r.price + ' Gold an', () => socket.emit('tradeAccept'), () => socket.emit('tradeDeny'), 45000));
-  socket.on('kicked', (msg) => { try { localStorage.removeItem('dungeonSession'); } catch (e) {} alert(msg); location.reload(); });
+  socket.on('kicked', (msg) => { alert(msg); location.reload(); });
   socket.on('leaderboard', (r) => { lastLb[r.cat] = r.rows; if (bigKind === 'rank') renderBig(); });
   socket.on('notice', (t) => pushToast(t));
   socket.on('loot', (r) => {
@@ -1333,14 +1433,8 @@ function startGame(authData) {
     }
   });
 
-  socket.emit('auth', auth);
+  socket.emit('auth', { mode: authMode, username, password, name, cls: selectedClass });
 }
-
-// Gespeicherte Session beim Laden automatisch fortsetzen
-try {
-  const savedSession = localStorage.getItem('dungeonSession');
-  if (savedSession) startGame({ token: savedSession });
-} catch (e) {}
 
 // ---------------- Eingabe ----------------
 const keys = {};
@@ -1351,7 +1445,6 @@ function bindInput() {
     if (document.activeElement === chatInput) return;
     keys[e.key.toLowerCase()] = true;
     if (e.key === ' ') { e.preventDefault(); socket.emit('attack'); }
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && 'erqcbf'.includes(e.key.toLowerCase())) e.preventDefault();
     if (e.key.toLowerCase() === 'e') socket.emit('useItem');
     if (e.key.toLowerCase() === 'r') socket.emit('useSpeedPotion');
     if (e.key.toLowerCase() === 'q') socket.emit('ability');
@@ -1376,9 +1469,7 @@ function bindInput() {
   const chatInput = document.getElementById('chatInput');
   chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      const ct = chatInput.value.trim();
-      if (ct.startsWith('/g ')) { if (ct.slice(3).trim()) socket.emit('partyChat', ct.slice(3).trim()); }
-      else if (ct) socket.emit('chat', ct);
+      sendChatText(chatInput.value.trim());
       chatInput.value = '';
       chatInput.blur();
     }
@@ -1386,54 +1477,103 @@ function bindInput() {
 
   document.getElementById('interactBtn').addEventListener('click', tryOpenNearestChest);
 
-  // ---------------- Mobile: virtueller Joystick ----------------
+  // ---------------- Mobile: schwebender Joystick (linke Bildschirmhaelfte) ----------------
+  const joyZone = document.getElementById('joyZone');
   const joyBase = document.getElementById('joyBase');
   const joyStick = document.getElementById('joyStick');
-  let joyActive = false, joyOrigin = { x: 0, y: 0 };
-
-  function joyPos(e) {
-    const t = e.touches ? e.touches[0] : e;
-    return { x: t.clientX, y: t.clientY };
-  }
-  joyBase.addEventListener('touchstart', (e) => {
+  let joyId = null, joyOrigin = { x: 0, y: 0 };
+  const JOY_MAX = 45;
+  const findTouch = (list, id) => { for (let i = 0; i < list.length; i++) if (list[i].identifier === id) return list[i]; return null; };
+  joyZone.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    joyActive = true;
-    const rect = joyBase.getBoundingClientRect();
-    joyOrigin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    if (joyId !== null) return;
+    const t = e.changedTouches[0];
+    joyId = t.identifier;
+    joyOrigin = { x: t.clientX, y: t.clientY };
+    joyBase.style.left = (t.clientX - 55) + 'px';
+    joyBase.style.top = (t.clientY - 55) + 'px';
+    joyBase.style.bottom = 'auto';
   }, { passive: false });
-  joyBase.addEventListener('touchmove', (e) => {
-    if (!joyActive) return;
+  joyZone.addEventListener('touchmove', (e) => {
+    if (joyId === null) return;
     e.preventDefault();
-    const p = joyPos(e);
-    let dx = p.x - joyOrigin.x, dy = p.y - joyOrigin.y;
-    const max = 40;
+    const t = findTouch(e.touches, joyId) || findTouch(e.changedTouches, joyId);
+    if (!t) return;
+    let dx = t.clientX - joyOrigin.x, dy = t.clientY - joyOrigin.y;
     const len = Math.hypot(dx, dy) || 1;
-    if (len > max) { dx = (dx / len) * max; dy = (dy / len) * max; }
+    if (len > JOY_MAX) { dx = dx / len * JOY_MAX; dy = dy / len * JOY_MAX; }
     joyStick.style.transform = `translate(${dx}px, ${dy}px)`;
-    joyVec = { x: dx / max, y: dy / max };
+    joyVec = { x: dx / JOY_MAX, y: dy / JOY_MAX };
     aim.x = dx; aim.y = dy;
     sendInput();
   }, { passive: false });
   function joyEnd(e) {
-    if (!joyActive) return;
+    if (joyId === null || !findTouch(e.changedTouches, joyId)) return;
     e.preventDefault();
-    joyActive = false;
+    joyId = null;
     joyVec = { x: 0, y: 0 };
     joyStick.style.transform = 'translate(0,0)';
+    joyBase.style.left = ''; joyBase.style.top = ''; joyBase.style.bottom = '';
     sendInput();
   }
-  joyBase.addEventListener('touchend', joyEnd, { passive: false });
-  joyBase.addEventListener('touchcancel', joyEnd, { passive: false });
+  joyZone.addEventListener('touchend', joyEnd, { passive: false });
+  joyZone.addEventListener('touchcancel', joyEnd, { passive: false });
 
-  // ---------------- Mobile: Aktions-Buttons ----------------
+  // ---------------- Mobile: Aktions-Buttons (Gedrueckthalten = Dauerangriff, Auto-Zielen) ----------------
   const mAttack = document.getElementById('mAttack');
   const mPotion = document.getElementById('mPotion');
   const mSpeed = document.getElementById('mSpeed');
-  mAttack.addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('attack'); }, { passive: false });
+  function touchAutoAim() {
+    const me = myPlayer();
+    if (!me) return;
+    let best = null, bd = 420;
+    if (me.zone === 'arena') {
+      for (const q of world.players) {
+        if (q.id === myId || q.zone !== 'arena' || q.dead || q.roster) continue;
+        const d = dist(me.x, me.y, q.x, q.y);
+        if (d < bd) { bd = d; best = q; }
+      }
+    } else {
+      for (const m of world.monsters) {
+        if (m.zone !== me.zone) continue;
+        const d = dist(me.x, me.y, m.x, m.y);
+        if (d < bd) { bd = d; best = m; }
+      }
+    }
+    if (best) { aim.x = best.x - me.x; aim.y = best.y - me.y; sendInput(); }
+  }
+  let atkTimer = null;
+  const stopAtk = () => { if (atkTimer) { clearInterval(atkTimer); atkTimer = null; } };
+  mAttack.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    stopAtk();
+    touchAutoAim(); socket.emit('attack');
+    atkTimer = setInterval(() => { touchAutoAim(); socket.emit('attack'); }, 130);
+  }, { passive: false });
+  mAttack.addEventListener('touchend', (e) => { e.preventDefault(); stopAtk(); }, { passive: false });
+  mAttack.addEventListener('touchcancel', stopAtk, { passive: false });
   mPotion.addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('useItem'); }, { passive: false });
   mSpeed.addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('useSpeedPotion'); }, { passive: false });
   document.getElementById('mAbility').addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('ability'); }, { passive: false });
 }
+
+function sendChatText(ct) {
+  if (!ct) return;
+  if (ct.startsWith('/gc ')) { if (ct.slice(4).trim()) socket.emit('guildChat', ct.slice(4).trim()); }
+  else if (ct.startsWith('/g ')) { if (ct.slice(3).trim()) socket.emit('partyChat', ct.slice(3).trim()); }
+  else socket.emit('chat', ct);
+}
+document.getElementById('menuOptionChat').addEventListener('click', () => {
+  toggleMenu(false);
+  const t = window.prompt('Nachricht (mit /g nur an die Gruppe):');
+  if (t) sendChatText(t.trim());
+});
+if (!(document.fullscreenEnabled && document.documentElement.requestFullscreen)) document.getElementById('menuOptionFull').style.display = 'none';
+document.getElementById('menuOptionFull').addEventListener('click', () => {
+  toggleMenu(false);
+  try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (err) {}
+});
+document.getElementById('orientHint').addEventListener('click', () => { document.getElementById('orientHint').style.display = 'none'; });
 
 function tryOpenNearestChest() {
   if (!socket || !nearestChestId) return;
@@ -1476,7 +1616,7 @@ updateGfxBtn();
 const smooth = new Map();      // weiche Bewegung: Schluessel -> { x, y, fx, fy, mv, seen }
 const particles = [];
 let frameId = 0, lastFrameAt = Date.now();
-let LIGHT_RADIUS_TILES = 22;
+let vignetteCanvas = null, vignetteKey = '';
 let shakeAmp = 0, shakeUntil = 0;
 let prevMonsters = new Map(), prevItems = new Map();
 let interactShown = false, zoneLabelText = '';
@@ -1519,12 +1659,7 @@ function smoothPos(key, tx, ty, k) {
     s.x += dx * k; s.y += dy * k;
     const sp = Math.hypot(dx * k, dy * k);
     s.mv = s.mv * 0.8 + sp * 0.2;
-    if (sp > 0.12) {
-      s.fx += (dx * k / sp - s.fx) * 0.18;
-      s.fy += (dy * k / sp - s.fy) * 0.18;
-      const fl = Math.hypot(s.fx, s.fy) || 1;
-      s.fx /= fl; s.fy /= fl;
-    }
+    if (sp > 0.12) { s.fx = dx * k / sp; s.fy = dy * k / sp; }
   }
   s.seen = frameId;
   return s;
@@ -1598,7 +1733,7 @@ function drawHero(p, sx, sy, s, t) {
     ctx.fillStyle = '#1b1e26'; ctx.beginPath(); ctx.arc(ex + fx * 0.8, ey + fy * 0.8, 1.2, 0, TAU); ctx.fill();
   }
   if (p.hat) { ctx.font = '16px Verdana'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(p.hat, sx, by - 12); ctx.textBaseline = 'alphabetic'; }
-  outlinedText(p.name + '  Lv' + p.level, sx, by - (p.hat ? 26 : 17), p.id === myId ? '#ffe9a8' : '#ffffff', 'bold 11px Verdana');
+  outlinedText((p.tag ? '[' + p.tag + '] ' : '') + p.name + '  Lv' + p.level, sx, by - (p.hat ? 26 : 17), p.id === myId ? '#ffe9a8' : '#ffffff', 'bold 11px Verdana');
   hpBar(sx - 16, by + 15, 32, 4, p.hp / p.maxHp);
 }
 
@@ -1724,8 +1859,8 @@ function drawMonster(m, sx, sy, s, t, meSx, meSy) {
       for (let i = 0; i < 3; i++) { const a = t / 300 + i * 2.1 + ph, rr = r + 6 + Math.sin(t / 170 + i) * 3; ctx.fillStyle = 'rgba(255,255,220,' + (0.5 + 0.4 * Math.sin(t / 130 + i)) + ')'; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * rr, by + Math.sin(a) * rr, 1.8, 0, TAU); ctx.fill(); }
       break;
     case 'boss': {
-      const pulse = 0.5 + 0.5 * Math.sin(t / 260);
-      glow(sx, by, r * 2.4 + pulse * 6, 'rgba(255,70,40,' + (0.28 + pulse * 0.12) + ')');
+      const pulse = 0.5 + 0.5 * Math.sin(t / (m.enraged ? 110 : 260));
+      glow(sx, by, r * (m.enraged ? 3.1 : 2.4) + pulse * 6, 'rgba(255,' + (m.enraged ? 30 : 70) + ',40,' + (0.28 + pulse * 0.12 + (m.enraged ? 0.14 : 0)) + ')');
       for (let i = 0; i < 9; i++) { const a = i / 9 * TAU + t / 4000, c1 = Math.cos(a), s1 = Math.sin(a); tri(sx + c1 * r * 0.92 - s1 * 4, by + s1 * r * 0.92 + c1 * 4, sx + c1 * r * 1.38, by + s1 * r * 1.38, sx + c1 * r * 0.92 + s1 * 4, by + s1 * r * 0.92 - c1 * 4, '#5b1410'); }
       body(r, '#e0573f', '#6b1a12');
       for (const sd of [-1, 1]) tri(sx + fx * r * 0.1 + ox * r * 0.45 * sd, by + fy * r * 0.1 + oy * r * 0.45 * sd, sx + fx * r * 0.9 + ox * r * 0.9 * sd, by + fy * r * 0.9 + oy * r * 0.9 * sd, sx + fx * r * 0.55 + ox * r * 0.1 * sd, by + fy * r * 0.55 + oy * r * 0.1 * sd, '#f4e6c8');
@@ -1781,6 +1916,18 @@ function drawChestSprite(c, sx, sy, near, t) {
 }
 
 // ----- Welt -----
+function ensureVignette() {
+  const key = canvas.width + 'x' + canvas.height;
+  if (vignetteKey === key && vignetteCanvas) return;
+  vignetteCanvas = document.createElement('canvas');
+  vignetteCanvas.width = canvas.width; vignetteCanvas.height = canvas.height;
+  const vc = vignetteCanvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const g = vc.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.hypot(w, h) * 0.56);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.7)');
+  vc.fillStyle = g; vc.fillRect(0, 0, w, h);
+  vignetteKey = key;
+}
 function updateZoneUi(me) {
   if (!me) return;
   const tierInfo = DUNGEON_TIERS[me.zone];
@@ -1934,22 +2081,14 @@ function render() {
     const tail = smoothPos('t' + pr.id, pr.x, pr.y, 1 - Math.exp(-dt * 9));
     const hx = head.x - camX, hy = head.y - camY, tx = tail.x - camX, ty = tail.y - camY;
     const col = pr.hostile ? (pr.color || '#ff6b3c') : '#7fdcff';
-    const fade = pr.dying ? Math.max(0.05, pr.dying / 9) : 1;
-    if (pr.dying && gfxHigh && particles.length < 260) {
-      const dl = Math.hypot(head.x - tail.x, head.y - tail.y) || 1, fx0 = (head.x - tail.x) / dl, fy0 = (head.y - tail.y) / dl;
-      particles.push({ x: head.x + (Math.random() - 0.5) * 5, y: head.y + (Math.random() - 0.5) * 5, vx: fx0 * (1.5 + Math.random() * 1.5), vy: fy0 * (1.5 + Math.random() * 1.5), life: 0.15 + Math.random() * 0.15, max: 0.3, color: col, size: 1.5 + Math.random() * 1.5 });
-    }
     if (gfxHigh) {
-      glow(hx, hy, (pr.hostile ? 16 : 14) * fade, pr.hostile ? 'rgba(255,120,60,0.5)' : 'rgba(110,210,255,0.5)');
-      ctx.strokeStyle = col; ctx.globalAlpha = 0.55 * fade; ctx.lineWidth = pr.hostile ? 5 : 4; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke();
+      glow(hx, hy, pr.hostile ? 16 : 14, pr.hostile ? 'rgba(255,120,60,0.5)' : 'rgba(110,210,255,0.5)');
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.55; ctx.lineWidth = pr.hostile ? 5 : 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke(); ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = fade;
-    const r = (pr.hostile ? 5 : 4) * (0.4 + 0.6 * fade);
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(hx, hy, r, 0, TAU); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(hx, hy, r * 0.5, 0, TAU); ctx.fill();
-    if (pr.hostile) { ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(hx, hy, r, 0, TAU); ctx.stroke(); }
-    ctx.globalAlpha = 1;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(hx, hy, pr.hostile ? 5 : 4, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(hx, hy, 2, 0, TAU); ctx.fill();
+    if (pr.hostile) { ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(hx, hy, 5, 0, TAU); ctx.stroke(); }
   }
 
   // ---- Boss-Bodenangriffe (Warnkreis) ----
@@ -1957,6 +2096,10 @@ function render() {
     const f = slamFx[i];
     const t = (now - f.at) / f.ms;
     if (t > 1.3) { slamFx.splice(i, 1); continue; }
+    if (f.cast) {
+      if (f.zone === currentZone) { ctx.save(); ctx.strokeStyle = 'rgba(255,220,100,' + (0.9 - 0.4 * Math.abs(Math.sin(t * 9))) + ')'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(f.x - camX, f.y - camY, f.r * (0.6 + 0.4 * t), 0, TAU); ctx.stroke(); ctx.restore(); outlinedText('⚠', f.x - camX, f.y - camY - f.r - 6, '#ffe066', 'bold 18px Verdana'); }
+      continue;
+    }
     if (t >= 1 && !f.landed) { f.landed = true; if (f.zone === currentZone && dist(me.x, me.y, f.x, f.y) < f.r + 260) startShake(6, 320); if (f.zone === currentZone) spawnParticles(f.x, f.y, '#ffb36b', 22, 5, 0.7, 3); }
     if (f.zone !== currentZone) continue;
     ctx.save();
@@ -2015,82 +2158,35 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // ---- Lichtradius: ausserhalb des Sichtradius (~350px) abdunkeln, mit weichem Verlauf ----
-  const lpx = meS.x - camX, lpy = meS.y - camY, LR = LIGHT_RADIUS_TILES * TILE;
-  const lg = ctx.createRadialGradient(lpx, lpy, LR * 0.45, lpx, lpy, LR);
-  lg.addColorStop(0, 'rgba(0,0,0,0)');
-  lg.addColorStop(0.55, 'rgba(0,0,0,0.25)');
-  lg.addColorStop(0.8, 'rgba(0,0,0,0.7)');
-  lg.addColorStop(1, 'rgba(0,0,0,0.98)');
-  ctx.fillStyle = lg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // ---- Stimmung: Abdunklung am Rand ----
+  if (gfxHigh) { ensureVignette(); ctx.drawImage(vignetteCanvas, 0, 0); }
 
   // ---- Aufraeumen der weichen Bewegung ----
   if (frameId % 90 === 0) for (const [key, s] of smooth) if (frameId - s.seen > 120) smooth.delete(key);
 
-  markExplored(currentZone, activeMap, me.x, me.y);
   drawMinimap(me, activeMap, currentZone);
 }
 
 function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
 
-// ---------------- Minimap + Erkundung ----------------
-const explored = {}; // zone -> { canvas, ctx, set }
-let exploredDirty = false, restoredZones = {};
-function mapFp() {
-  let s = '';
-  for (const k in DUNGEON_TIERS) s += DUNGEON_TIERS[k].rows.join('');
-  s += (ARENA_MAP || []).join('') + (BOSSROOM_MAP || []).join('');
-  let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  return h;
-}
-function loadExplored() {
-  try {
-    const d = JSON.parse(localStorage.getItem('dungeonExplored') || 'null');
-    if (d && d.fp === mapFp()) restoredZones = d.zones || {};
-    else if (d) localStorage.removeItem('dungeonExplored');
-  } catch (e) {}
-}
-function saveExplored() {
-  if (!exploredDirty || !Object.keys(DUNGEON_TIERS).length) return;
-  const zones = {};
-  for (const z in explored) zones[z] = [...explored[z].set];
-  try { localStorage.setItem('dungeonExplored', JSON.stringify({ fp: mapFp(), zones })); } catch (e) {}
-  exploredDirty = false;
-}
-setInterval(saveExplored, 4000);
-window.addEventListener('beforeunload', saveExplored);
-function markExplored(zone, rows, px, py) {
+// ---------------- Minimap ----------------
+const minimapImages = {};
+function getMinimapImage(zone, rows) {
+  if (minimapImages[zone]) return minimapImages[zone];
   const h = rows.length, w = rows[0].length;
-  let e = explored[zone];
-  if (!e) {
-    const fog = document.createElement('canvas');
-    fog.width = w; fog.height = h;
-    e = explored[zone] = { canvas: fog, ctx: fog.getContext('2d'), set: new Set() };
-    const rs = restoredZones[zone];
-    if (rs) {
-      e.set = new Set(rs);
-      e.ctx.fillStyle = 'rgba(130,140,160,0.59)';
-      for (const i of rs) {
-        const y = (i / w) | 0, x = i % w;
-        if (rows[y][x] !== '0') e.ctx.fillRect(x, y, 1, 1);
-      }
-      delete restoredZones[zone];
+  const img = document.createElement('canvas');
+  img.width = w; img.height = h;
+  const ictx = img.getContext('2d');
+  const data = ictx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (rows[y][x] === '0') { data.data[i] = 130; data.data[i + 1] = 140; data.data[i + 2] = 160; data.data[i + 3] = 150; }
     }
   }
-  // Entdeckungsradius: rund, fix ~350px (ca. halber 720p-Viewport), unabhaengig von Fenstergroesse/Zoom
-  const R = 11;
-  const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
-  const r = Math.ceil(R);
-  e.ctx.fillStyle = 'rgba(130,140,160,0.59)';
-  for (let y = Math.max(0, ty - r); y <= Math.min(h - 1, ty + r); y++) {
-    for (let x = Math.max(0, tx - r); x <= Math.min(w - 1, tx + r); x++) {
-      if ((x - tx) * (x - tx) + (y - ty) * (y - ty) > R * R) continue;
-      const i = y * w + x;
-      if (e.set.has(i)) continue;
-      e.set.add(i); exploredDirty = true;
-      if (rows[y][x] !== '0') e.ctx.fillRect(x, y, 1, 1);
-    }
-  }
+  ictx.putImageData(data, 0, 0);
+  minimapImages[zone] = img;
+  return img;
 }
 function drawMinimap(me, rows, zone) {
   const mm = document.getElementById('minimap');
@@ -2102,8 +2198,7 @@ function drawMinimap(me, rows, zone) {
   const mctx = mm.getContext('2d');
   mctx.clearRect(0, 0, cw, ch);
   mctx.imageSmoothingEnabled = false;
-  const fog = explored[zone];
-  if (fog) mctx.drawImage(fog.canvas, 0, 0, w, h, 0, 0, cw, ch);
+  mctx.drawImage(getMinimapImage(zone, rows), 0, 0, w, h, 0, 0, cw, ch);
   const dot = (x, y, r, color) => {
     mctx.beginPath();
     mctx.arc(x / TILE * scale, y / TILE * scale, r, 0, Math.PI * 2);
@@ -2137,41 +2232,13 @@ function drawBar(x, y, w, h, pct, color) {
   ctx.fillRect(x, y, w * pct, h);
 }
 
-function barBurst(bar, frac, color) {
-  const outer = bar.parentElement, host = outer.parentElement;
-  const cx = outer.offsetLeft + Math.min(1, frac) * outer.offsetWidth;
-  const cy = outer.offsetTop + outer.offsetHeight / 2;
-  for (let i = 0; i < 16; i++) {
-    const s = document.createElement('span');
-    const sz = 4 + Math.random() * 4;
-    s.className = 'barPixel';
-    s.style.width = sz + 'px'; s.style.height = sz + 'px';
-    s.style.background = Math.random() < 0.35 ? '#fff' : color;
-    const a = Math.random() * Math.PI * 2, d = 20 + Math.random() * 34;
-    s.style.setProperty('--dx', (Math.cos(a) * d).toFixed(1) + 'px');
-    s.style.setProperty('--dy', (Math.sin(a) * d - 10).toFixed(1) + 'px');
-    s.style.left = (cx - sz / 2) + 'px';
-    s.style.top = (cy - sz / 2) + 'px';
-    host.appendChild(s);
-    setTimeout(() => s.remove(), 750);
-  }
-}
-
-let lastHp, lastXp;
 function updateHud(me) {
   document.getElementById('nameLbl').textContent = me.name;
   document.getElementById('hpTxt').textContent = Math.max(0, Math.round(me.hp)) + '/' + me.maxHp;
-  const hpBar = document.getElementById('hpBar');
-  const hpFrac = Math.max(0, me.hp / me.maxHp);
-  hpBar.style.width = hpFrac * 100 + '%';
-  if (lastHp !== undefined && me.hp > lastHp) barBurst(hpBar, hpFrac, 'var(--hp)');
-  lastHp = me.hp;
+  document.getElementById('hpBar').style.width = Math.max(0, (me.hp / me.maxHp) * 100) + '%';
   document.getElementById('lvlTxt').textContent = me.level;
   document.getElementById('xpTxt').textContent = me.xp + '/' + me.xpNext;
-  const xpBar = document.getElementById('xpBar');
-  xpBar.style.width = (me.xp / me.xpNext) * 100 + '%';
-  if (lastXp !== undefined && me.xp > lastXp && me.xpNext) barBurst(xpBar, me.xp / me.xpNext, 'var(--xp)');
-  lastXp = me.xp;
+  document.getElementById('xpBar').style.width = (me.xp / me.xpNext) * 100 + '%';
   document.getElementById('goldTxt').textContent = me.gold;
   document.getElementById('potionTxt').textContent = me.potions;
   document.getElementById('speedPotionTxt').textContent = me.speedPotions || 0;
