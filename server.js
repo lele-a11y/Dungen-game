@@ -510,11 +510,11 @@ function recomputeStats(p) {
 }
 
 const SHOP_ITEMS = {
-  potion: { label: 'Heiltrank', cat: 'verbrauch', baseCost: 12, scale: 0, maxCount: null },
-  speedpotion: { label: 'Tempo-Trank (15s +60% Tempo)', cat: 'verbrauch', baseCost: 15, scale: 0, maxCount: null },
-  dmg: { label: 'Waffe schärfen (+2 Schaden)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
-  hp: { label: 'Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
-  speed: { label: 'Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
+  potion: { label: '🧪 Heiltrank', cat: 'verbrauch', baseCost: 12, scale: 0, maxCount: null },
+  speedpotion: { label: '⚡ Tempo-Trank (15s +60% Tempo)', cat: 'verbrauch', baseCost: 15, scale: 0, maxCount: null },
+  dmg: { label: '⚔️ Waffe schärfen (+2 Schaden)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
+  hp: { label: '🛡️ Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
+  speed: { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
 };
 // Trinkgeld-Links: hier die eigenen URLs eintragen (z.B. PayPal.Me oder Ko-fi).
 // Solange leer, zeigt der Client "demnächst" an.
@@ -2160,6 +2160,7 @@ io.on('connection', (socket) => {
         bossRoomMap: BOSSROOM_ROWS,
         tile: TILE,
         classes: CLASSES,
+        shop: SHOP_ITEMS,
         donate: DONATE_LINKS,
         isAdmin: players[socket.id].isAdmin
       });
@@ -2635,16 +2636,22 @@ io.on('connection', (socket) => {
     notice(p, `${name} wurde entsperrt.`);
   });
 
-  socket.on('adminEvent', (d) => {
+  socket.on('adminAction', (d) => {
     const p = players[socket.id];
     if (!p || !p.isAdmin) return;
-    const zone = isDungeonTier(p.zone) ? p.zone : tierForLevel(p.level);
     const kind = d && d.kind;
+    const zone = isDungeonTier(p.zone) ? p.zone : tierForLevel(p.level);
     if (kind === 'treasure') spawnTreasureGoblin(zone);
     else if (kind === 'ambush') runAmbush(zone, p);
     else if (kind === 'blessing') runBlessing(zone);
     else if (kind === 'tierboss') spawnTierBoss(zone);
     else if (kind === 'raid') { if (!startRaid()) notice(p, 'Es läuft schon ein Raid.'); }
+    else if (kind === 'goldevent') { goldEventUntil = Date.now() + 5 * 60000; io.emit('announcement', `💰 ${p.name} startet ein Doppel-Gold-Event! (5 Minuten)`); }
+    else if (kind === 'xpevent') { xpEventUntil = Date.now() + 5 * 60000; io.emit('announcement', `✨ ${p.name} startet ein Doppel-XP-Event! (5 Minuten)`); }
+    else if (kind === 'wave') { for (let i = 0; i < 10; i++) spawnMonster(isDungeonTier(p.zone) ? p.zone : DEFAULT_TIER_KEY); io.emit('announcement', `👹 ${p.name} hat eine Monsterwelle beschworen!`); }
+    else if (kind === 'boss') { bossCycle(); io.emit('announcement', `👑 ${p.name} hat den Boss sofort herbeigerufen!`); }
+    else if (kind === 'heal') { for (const id in players) { const pl = players[id]; pl.hp = pl.maxHp; pl.dead = false; } io.emit('announcement', `💚 ${p.name} hat alle vollständig geheilt!`); }
+    else if (kind === 'announce') { const text = String((d && d.text) || '').slice(0, 140).trim(); if (text) io.emit('announcement', `📢 ${text}`); }
   });
 
   socket.on('guildInfo', () => { const p = players[socket.id]; if (p) sendGuild(p); });
@@ -2830,6 +2837,7 @@ io.on('connection', (socket) => {
   socket.on('buyItem', (data) => {
     const p = players[socket.id];
     if (!p || p.dead) return;
+    if (p.zone !== 'town') return socket.emit('shopError', 'Der Shop ist nur in der Stadt verfügbar.');
     const type = data && data.type;
     const def = SHOP_ITEMS[type];
     if (!def) return;
@@ -2943,53 +2951,6 @@ io.on('connection', (socket) => {
       }
       io.emit('announcement', `🧪 ${p.name} verteilt ${amount} Heiltränke an alle!`);
     }
-  });
-
-  socket.on('adminAnnounce', (data) => {
-    const p = players[socket.id];
-    if (!p || !p.isAdmin) return;
-    const text = String((data && data.text) || '').slice(0, 140).trim();
-    if (!text) return;
-    io.emit('announcement', `📢 ${text}`);
-  });
-
-  socket.on('adminSpawnWave', () => {
-    const p = players[socket.id];
-    if (!p || !p.isAdmin) return;
-    for (let i = 0; i < 10; i++) spawnMonster(isDungeonTier(p.zone) ? p.zone : DEFAULT_TIER_KEY);
-    io.emit('announcement', `👹 ${p.name} hat eine Monsterwelle beschworen!`);
-  });
-
-  socket.on('adminHealAll', () => {
-    const p = players[socket.id];
-    if (!p || !p.isAdmin) return;
-    for (const id in players) {
-      const pl = players[id];
-      pl.hp = pl.maxHp;
-      pl.dead = false;
-    }
-    io.emit('announcement', `💚 ${p.name} hat alle vollständig geheilt!`);
-  });
-
-  socket.on('adminEventGold', () => {
-    const p = players[socket.id];
-    if (!p || !p.isAdmin) return;
-    goldEventUntil = Date.now() + 5 * 60000;
-    io.emit('announcement', `💰 ${p.name} startet ein Doppel-Gold-Event! (5 Minuten)`);
-  });
-
-  socket.on('adminEventXp', () => {
-    const p = players[socket.id];
-    if (!p || !p.isAdmin) return;
-    xpEventUntil = Date.now() + 5 * 60000;
-    io.emit('announcement', `✨ ${p.name} startet ein Doppel-XP-Event! (5 Minuten)`);
-  });
-
-  socket.on('adminSpawnBoss', () => {
-    const p = players[socket.id];
-    if (!p || !p.isAdmin) return;
-    bossCycle();
-    io.emit('announcement', `👑 ${p.name} hat den Boss sofort herbeigerufen!`);
   });
 
   // ---------------- Stadt, 2. Faehigkeit, Tresore, Raid, Wiedergeburt, Saison ----------------

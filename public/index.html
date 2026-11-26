@@ -400,7 +400,7 @@
 
   <div id="chatBox"></div>
   <input id="chatInput" placeholder="Enter zum Chatten..." style="display:none;">
-  <div id="hint" style="display:none;">WASD/Pfeile: Bewegen&nbsp;·&nbsp;Klick/Leertaste: Angriff&nbsp;·&nbsp;E: Trank&nbsp;·&nbsp;R: Tempo-Trank&nbsp;·&nbsp;Q/T: Fähigkeiten&nbsp;·&nbsp;C: Charakter&nbsp;·&nbsp;B: Shop&nbsp;·&nbsp;F: Interagieren&nbsp;·&nbsp;G: Stadt&nbsp;·&nbsp;Esc: Menü</div>
+  <div id="hint" style="display:none;">WASD/Pfeile: Bewegen&nbsp;·&nbsp;Klick/Leertaste: Angriff&nbsp;·&nbsp;E: Trank&nbsp;·&nbsp;R: Tempo-Trank&nbsp;·&nbsp;Q/T: Fähigkeiten&nbsp;·&nbsp;C: Charakter&nbsp;·&nbsp;B: Shop (Stadt)&nbsp;·&nbsp;F: Interagieren&nbsp;·&nbsp;G: Stadt&nbsp;·&nbsp;Esc: Menü</div>
 
   <div id="orientHint">📱 Quer spielen ist bequemer</div>
   <button id="menuBtn">☰</button>
@@ -642,13 +642,7 @@ let nearInteract = null, interactLabel = '';
 const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 if (isTouchDevice) document.body.classList.add('touch-active');
 
-const SHOP_ITEMS = {
-  potion: { label: '🧪 Heiltrank', cat: 'verbrauch', baseCost: 12, scale: 0, maxCount: null },
-  speedpotion: { label: '⚡ Tempo-Trank (15s +60% Tempo)', cat: 'verbrauch', baseCost: 15, scale: 0, maxCount: null },
-  dmg:    { label: '⚔️ Waffe schärfen (+2 Schaden)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
-  hp:     { label: '🛡️ Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
-  speed:  { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
-};
+let SHOP_ITEMS = {};
 const SHOP_CATS = { verbrauch: '🧪 Verbrauch', upgrades: '⚔️ Upgrades', echtgeld: '💰 Echtgeld (Trinkgeld)' };
 let DONATE = { paypal: '', kofi: '' };
 function shopCostClient(key, count) {
@@ -721,7 +715,11 @@ function toggleMenu(force) {
 }
 document.getElementById('menuBtn').addEventListener('click', () => toggleMenu());
 document.getElementById('menuOptionClose').addEventListener('click', () => toggleMenu(false));
-document.getElementById('menuOptionShop').addEventListener('click', () => { toggleMenu(false); toggleShop(true); });
+document.getElementById('menuOptionShop').addEventListener('click', () => {
+  toggleMenu(false);
+  const m = world.players.find(q => q.id === myId);
+  if (m && m.zone === 'town') toggleShop(true); else pushToast('Der Shop ist nur in der Stadt.', 2500);
+});
 document.getElementById('menuOptionPvp').addEventListener('click', () => { toggleMenu(false); togglePvpPanel(true); });
 document.getElementById('menuOptionTiers').addEventListener('click', () => { toggleMenu(false); toggleTiersPanel(true); });
 document.getElementById('menuOptionBossroom').addEventListener('click', () => { toggleMenu(false); toggleBossroomPanel(true); });
@@ -1381,19 +1379,19 @@ document.getElementById('adminPotionSelf').addEventListener('click', () => {
 document.getElementById('adminAnnounceBtn').addEventListener('click', () => {
   const text = document.getElementById('adminAnnounceText').value.trim();
   if (!text) return;
-  socket.emit('adminAnnounce', { text });
+  socket.emit('adminAction', { kind: 'announce', text });
   document.getElementById('adminAnnounceText').value = '';
 });
-document.getElementById('adminWaveBtn').addEventListener('click', () => socket.emit('adminSpawnWave'));
-document.getElementById('adminHealBtn').addEventListener('click', () => socket.emit('adminHealAll'));
-document.getElementById('adminGoldEventBtn').addEventListener('click', () => socket.emit('adminEventGold'));
-document.getElementById('adminXpEventBtn').addEventListener('click', () => socket.emit('adminEventXp'));
-document.getElementById('adminBossBtn').addEventListener('click', () => socket.emit('adminSpawnBoss'));
-document.getElementById('adminTierBossBtn').addEventListener('click', () => socket.emit('adminEvent', { kind: 'tierboss' }));
-document.getElementById('adminTreasureBtn').addEventListener('click', () => socket.emit('adminEvent', { kind: 'treasure' }));
-document.getElementById('adminAmbushBtn').addEventListener('click', () => socket.emit('adminEvent', { kind: 'ambush' }));
-document.getElementById('adminBlessBtn').addEventListener('click', () => socket.emit('adminEvent', { kind: 'blessing' }));
-document.getElementById('adminRaidBtn').addEventListener('click', () => socket.emit('adminEvent', { kind: 'raid' }));
+document.getElementById('adminWaveBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'wave' }));
+document.getElementById('adminHealBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'heal' }));
+document.getElementById('adminGoldEventBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'goldevent' }));
+document.getElementById('adminXpEventBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'xpevent' }));
+document.getElementById('adminBossBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'boss' }));
+document.getElementById('adminTierBossBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'tierboss' }));
+document.getElementById('adminTreasureBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'treasure' }));
+document.getElementById('adminAmbushBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'ambush' }));
+document.getElementById('adminBlessBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'blessing' }));
+document.getElementById('adminRaidBtn').addEventListener('click', () => socket.emit('adminAction', { kind: 'raid' }));
 
 // ---------------- Startscreen ----------------
 let authMode = 'login';
@@ -1441,7 +1439,7 @@ function startGame() {
   });
   socket.on('init', (data) => {
     myId = data.you; DUNGEON_TIERS = data.dungeonTiers || {}; MONSTER_DEFS = data.monsterDefs || {}; ABILITIES = data.abilities || {}; DEFS = data.defs || {}; ARENA_MAP = data.arenaMap; BOSSROOM_MAP = data.bossRoomMap; TILE = data.tile; CLASSES = data.classes;
-    TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {};
+    TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {}; SHOP_ITEMS = data.shop || {};
     isAdmin = !!data.isAdmin;
     if (data.donate) DONATE = data.donate;
     if (magnetOn) socket.emit('setMagnet', true);
@@ -1597,7 +1595,7 @@ function bindInput() {
     if (e.key.toLowerCase() === 'q') socket.emit('ability');
     if (e.key.toLowerCase() === 't') socket.emit('ability2');
     if (e.key.toLowerCase() === 'c') toggleBig('char');
-    if (e.key.toLowerCase() === 'b') toggleShop();
+    if (e.key.toLowerCase() === 'b') { const mp = myPlayer(); if (mp && mp.zone === 'town') toggleShop(); else pushToast('Der Shop ist nur in der Stadt.', 2500); }
     if (e.key.toLowerCase() === 'f') interactNearest();
     if (e.key.toLowerCase() === 'g') {
       const mp = myPlayer();
