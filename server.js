@@ -68,6 +68,7 @@ async function createAccount(username, passwordHash, cls) {
     upgDmg: 0, upgHp: 0, upgSpeed: 0, quests: [],
     inventory: [], equipment: {}, skills: {}, essence: 0, cosmetics: {}, pet: null,
     stats: {}, achievements: [], daily: {}, friends: [], guild: null,
+    keys: 0, prestige: 0, season: { id: '', points: 0 },
     createdAt: new Date()
   };
   if (accountsCol) await accountsCol.insertOne(doc);
@@ -83,7 +84,8 @@ async function saveAccountProgress(p) {
         level: p.level, xp: p.xp, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions, cls: p.cls,
         upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, quests: p.quests || [],
         inventory: p.inventory || [], equipment: p.equipment || {}, skills: p.skills || {}, essence: p.essence || 0,
-        cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null
+        cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null,
+        keys: p.keys || 0, prestige: p.prestige || 0, season: p.season || { id: '', points: 0 }
       } }
     );
   } catch (err) {
@@ -95,6 +97,13 @@ async function saveAccountProgress(p) {
 const TILE = 32;
 const TICK_RATE = 20; // Server-Ticks pro Sekunde
 const MAX_PLAYERS_PER_DUNGEON = 6;
+
+// Neue Systeme: Fallen, Tresore, Wiedergeburt, Raid, Saison
+const TRAP_CYCLE = 3200, TRAP_WARN_FROM = 1800, TRAP_ACTIVE_FROM = 2400;   // Fallen: 0.6 s Warnung, 0.8 s aktiv
+const VAULT_RESPAWN_MS = 8 * 60 * 1000, SECRET_RESPAWN_MS = 5 * 60 * 1000;
+const KEY_DROP_MONSTER = 0.03;
+const PRESTIGE_MIN_LEVEL = 50, PRESTIGE_MAX = 10, CLASS_CHANGE_COST = 750;
+const RAID_INTERVAL_MS = 35 * 60 * 1000, RAID_DURATION_MS = 10 * 60 * 1000, RAID_MIN_LEVEL = 5, RAID_MAX_DEATHS = 5;
 
 // Dungeon-Layout: 1 = Wand, 0 = Boden
 // Prozedural generiert (Randomized-DFS-Raumgraph), garantiert zusammenhaengend.
@@ -288,19 +297,79 @@ function makeArena(w, h) {
   return rows;
 }
 
-function buildMapInfo(rows, w, h) {
+function buildMapInfo(rows, w, h, excl) {
+  // '1' = Wand, '0' = Boden, '2' = Tresortuer (Schluessel), '3' = Geheimwand (Angriff oeffnet sie), '4' = Boden in Tresor-/Geheimraeumen
+  const open = new Set();   // geoeffnete Tueren als "x,y"
   function isWall(tx, ty) {
     if (tx < 0 || ty < 0 || tx >= w || ty >= h) return true;
-    return rows[ty][tx] === '1';
+    const c = rows[ty][tx];
+    if (c === '1') return true;
+    if (c === '2' || c === '3') return !open.has(tx + ',' + ty);
+    return false;
   }
-  function isFloor(tx, ty) { return !isWall(tx, ty); }
+  function isFloor(tx, ty) { return !isWall(tx, ty) && !(excl && excl.has(tx + ',' + ty)); }
   const floor = [];
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      if (isFloor(x, y)) floor.push({ x, y });
+      if (rows[y][x] === '0' && !(excl && excl.has(x + ',' + y))) floor.push({ x, y });
     }
   }
-  return { rows, w, h, isWall, isFloor, floor };
+  return { rows, w, h, isWall, isFloor, floor, open };
+}
+
+// Tresorraeume (Tuer + Schluessel) und Geheimraeume (Wand, die auf Angriffe reagiert) in Waende einbauen
+function carveFeatures(rowsIn, vaultCount, secretCount) {
+  const PAD = 8, W = rowsIn[0].length;
+  const wallRow = '1'.repeat(W), padded = [];
+  for (let i = 0; i < PAD; i++) padded.push(wallRow);
+  for (const r of rowsIn) padded.push(r);
+  for (let i = 0; i < PAD; i++) padded.push(wallRow);
+  const g = padded.map(r => r.split('')), H = g.length;
+  const excl = new Set(), vaults = [], secrets = [];
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const solid = (x, y) => x >= 1 && y >= 1 && x < W - 1 && y < H - 1 && g[y][x] === '1';
+  function carveOne(kind) {
+    for (let attempt = 0; attempt < 40000; attempt++) {
+      const fx = 2 + Math.floor(Math.random() * (W - 4)), fy = 2 + Math.floor(Math.random() * (H - 4));
+      if (g[fy][fx] !== '0') continue;
+      const [dx, dy] = dirs[Math.floor(Math.random() * 4)], px = -dy, py = dx;
+      let ok = true;
+      for (let d = 1; d <= 6 && ok; d++) for (let w = -2; w <= 2; w++) {
+        if (!solid(fx + dx * d + px * w, fy + dy * d + py * w)) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const door = { x: fx + dx, y: fy + dy };
+      g[door.y][door.x] = kind === 'vault' ? '2' : '3';
+      const cells = [];
+      const put = (x, y) => { g[y][x] = '4'; cells.push({ x, y }); excl.add(x + ',' + y); };   // '4' = Raumboden (auf der Minimap unsichtbar)
+      put(fx + dx * 2, fy + dy * 2);
+      for (let d = 3; d <= 5; d++) for (let w = -1; w <= 1; w++) put(fx + dx * d + px * w, fy + dy * d + py * w);
+      const mid = { x: fx + dx * 4, y: fy + dy * 4 }, side = { x: fx + dx * 4 + px, y: fy + dy * 4 + py };
+      const room = { kind, door, cells, cellKeys: new Set(cells.map(c => c.x + ',' + c.y)), chestAt: kind === 'vault' ? [mid] : [mid, side], chests: [], lootedAt: 0 };
+      (kind === 'vault' ? vaults : secrets).push(room);
+      return true;
+    }
+    return false;
+  }
+  for (let i = 0; i < vaultCount; i++) carveOne('vault');
+  for (let i = 0; i < secretCount; i++) carveOne('secret');
+  return { rows: g.map(r => r.join('')), excl, vaults, secrets };
+}
+
+// Stachelfallen: kleine Gruppen aus 2-4 Feldern, jede mit eigenem Takt
+function makeTraps(map, clusters) {
+  const traps = [], seen = new Set();
+  for (let c = 0; c < clusters; c++) {
+    const t = map.floor[Math.floor(Math.random() * map.floor.length)];
+    const horizontal = Math.random() < 0.5, len = 2 + Math.floor(Math.random() * 3), ph = Math.floor(Math.random() * TRAP_CYCLE);
+    for (let i = 0; i < len; i++) {
+      const x = t.x + (horizontal ? i : 0), y = t.y + (horizontal ? 0 : i), k = x + ',' + y;
+      if (seen.has(k) || !map.isFloor(x, y)) break;
+      seen.add(k);
+      traps.push({ x, y, ph: (ph + i * 250) % TRAP_CYCLE });
+    }
+  }
+  return traps;
 }
 
 // ---------------- Dungeon-Stufen (abhaengig vom Spieler-Level) ----------------
@@ -325,9 +394,14 @@ const DUNGEON_TIER_DEFS = [
     theme: { wall: '#3a2350', wallTop: '#251538', floorA: '#150d20', floorB: '#1a1128' } }
 ];
 const DUNGEON_TIERS = {};
+const FEATURES = {};   // zone -> { vaults, secrets, trapMap }
 for (const def of DUNGEON_TIER_DEFS) {
-  const rows = buildTierRows(def.gen);
-  DUNGEON_TIERS[def.key] = { ...def, rows, map: buildMapInfo(rows, rows[0].length, rows.length) };
+  const built = carveFeatures(buildTierRows(def.gen), 3, 2);
+  const rows = built.rows;
+  const map = buildMapInfo(rows, rows[0].length, rows.length, built.excl);
+  const traps = makeTraps(map, 28);
+  DUNGEON_TIERS[def.key] = { ...def, rows, map, traps };
+  FEATURES[def.key] = { vaults: built.vaults, secrets: built.secrets, trapMap: new Map(traps.map(t => [t.x + ',' + t.y, t.ph])) };
 }
 const DEFAULT_TIER_KEY = DUNGEON_TIER_DEFS[0].key;
 function tierForLevel(level) {
@@ -342,7 +416,37 @@ const ARENA = buildMapInfo(ARENA_ROWS, ARENA_ROWS[0].length, ARENA_ROWS.length);
 const BOSSROOM_ROWS = makeArena(24, 16);
 const BOSSROOM = buildMapInfo(BOSSROOM_ROWS, BOSSROOM_ROWS[0].length, BOSSROOM_ROWS.length);
 
+// Hub-Stadt: sicherer Ort mit NPCs
+function makeTownRows() {
+  const g = makeArena(40, 24).map(r => r.split(''));
+  const box = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = '1'; };
+  box(4, 2, 12, 4); box(27, 2, 35, 4); box(4, 19, 12, 21); box(27, 19, 35, 21); box(19, 11, 20, 12);
+  return g.map(r => r.join(''));
+}
+function makeRaidRows() {
+  const g = makeArena(44, 28).map(r => r.split(''));
+  const box = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = '1'; };
+  box(11, 7, 12, 8); box(11, 19, 12, 20); box(31, 7, 32, 8); box(31, 19, 32, 20);
+  return g.map(r => r.join(''));
+}
+const TOWN_ROWS = makeTownRows();
+const TOWN = buildMapInfo(TOWN_ROWS, TOWN_ROWS[0].length, TOWN_ROWS.length);
+const RAID_ROWS = makeRaidRows();
+const RAID = buildMapInfo(RAID_ROWS, RAID_ROWS[0].length, RAID_ROWS.length);
+const tileCenter = (x, y) => ({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2 });
+const TOWN_SPAWN = tileCenter(20, 16);
+const RAID_ENTRY = tileCenter(4, 14), RAID_CENTER = tileCenter(22, 14);
+const TOWN_NPCS = [
+  { id: 'shop',    name: 'Händler Brun',       icon: '🏪', panel: 'shop',    ...tileCenter(8, 5) },
+  { id: 'smith',   name: 'Schmied Ragna',      icon: '⚒️', panel: 'smith',   ...tileCenter(31, 5) },
+  { id: 'quests',  name: 'Questgeberin Mira',  icon: '📜', panel: 'quests',  ...tileCenter(8, 18) },
+  { id: 'herald',  name: 'Herold Torben',      icon: '🐉', panel: 'raid',    ...tileCenter(31, 18) },
+  { id: 'rebirth', name: 'Meister der Wiedergeburt', icon: '⭐', panel: 'rebirth', ...tileCenter(20, 5) }
+];
+
 function mapFor(zone) {
+  if (zone === 'town') return TOWN;
+  if (zone === 'raid') return RAID;
   if (zone === 'arena') return ARENA;
   if (zone === 'bossroom') return BOSSROOM;
   if (DUNGEON_TIERS[zone]) return DUNGEON_TIERS[zone].map;
@@ -390,8 +494,9 @@ function recomputeStats(p) {
   const base = statsForLevel(p.cls, p.level);
   const eq = equipmentBonus(p);
   const vit = 1 + 0.04 * ((p.skills && p.skills.vit) || 0);
-  p.maxHp = Math.round((base.maxHp + p.upgHp * 15 + eq.hp) * vit);
-  p.dmg = base.dmg + Math.round((p.upgDmg * 2 + eq.dmg) * dmgScale(p.cls));
+  const pm = 1 + 0.06 * (p.prestige || 0);   // Wiedergeburt: +6% Leben und Schaden je Stufe
+  p.maxHp = Math.round((base.maxHp + p.upgHp * 15 + eq.hp) * vit * pm);
+  p.dmg = Math.round((base.dmg + Math.round((p.upgDmg * 2 + eq.dmg) * dmgScale(p.cls))) * pm);
   p.speed = CLASSES[p.cls].speed + p.upgSpeed * 0.12 + eq.speed;
   p.critBonus = Math.min(0.5, eq.crit);
   p.hp = Math.min(p.hp, p.maxHp);
@@ -432,6 +537,7 @@ const MONSTER_TYPES = {
   archer:  { hp: 45, dmg: 11, speed: 0.95, xp: 22, range: 260, cooldown: 1700, color: '#c9a66b', radius: 11, ranged: { speed: 6, life: 60, color: '#f1e3b0' } },
   caster:  { hp: 60, dmg: 17, speed: 0.8, xp: 38, range: 300, cooldown: 2300, color: '#9b4dca', radius: 12, effect: 'burn', ranged: { speed: 4.5, life: 80, color: '#ff8a3c' } },
   spitter: { hp: 70, dmg: 13, speed: 0.7, xp: 30, range: 240, cooldown: 2000, color: '#7bd05a', radius: 13, effect: 'poison', ranged: { speed: 4, life: 75, color: '#8fff6b' } },
+  raidboss: { hp: 1, dmg: 38, speed: 1.1, xp: 0, range: 58, cooldown: 1000, color: '#7d3cff', radius: 44, name: 'Weltenfresser' },
   boss:   { hp: 900, dmg: 22, speed: 1.0, xp: 400, range: 48, cooldown: 1100, color: '#c0392b', radius: 26, name: 'Dungeon-Wächter' }
 };
 const MAX_MONSTERS_PER_TIER = 60;
@@ -545,13 +651,291 @@ const chests = {};
   }
 })();
 
+// ================= Neue Systeme: Tresore, Fallen, 2. Faehigkeit, Saison, Raid =================
+function giveKey(p, n) {
+  p.keys = Math.min(99, (p.keys || 0) + n);
+  notice(p, '🔑 Schlüssel gefunden (' + p.keys + ')');
+}
+
+// Geheimwand: reagiert auf Angriffe in der Naehe
+function revealSecrets(p) {
+  const feat = FEATURES[p.zone];
+  if (!feat || p.dead) return;
+  const map = DUNGEON_TIERS[p.zone].map;
+  for (const room of feat.secrets) {
+    const k = room.door.x + ',' + room.door.y;
+    if (map.open.has(k)) continue;
+    if (dist(p.x, p.y, room.door.x * TILE + TILE / 2, room.door.y * TILE + TILE / 2) > 52) continue;
+    map.open.add(k);
+    p.stats.secrets++;
+    addSeasonPoints(p, 10);
+    notice(p, '🔍 Du hast einen Geheimraum entdeckt!');
+    checkAchievements(p);
+    saveAccountProgress(p);
+  }
+}
+
+// Stachelfallen
+function checkTraps(p, now) {
+  const feat = FEATURES[p.zone];
+  if (!feat) return;
+  const ph = feat.trapMap.get(Math.floor(p.x / TILE) + ',' + Math.floor(p.y / TILE));
+  if (ph === undefined) return;
+  if (((now + ph) % TRAP_CYCLE) < TRAP_ACTIVE_FROM) return;
+  if (now - (p.trapAt || 0) < 900) return;
+  p.trapAt = now;
+  damagePlayer(p, Math.max(5, Math.round(p.maxHp * 0.07)));
+  io.to(p.id).emit('trapHit');
+}
+
+// Truhen in Tresor- und Geheimraeumen
+(function initRoomChests() {
+  let n = 1;
+  for (const zone in FEATURES) {
+    for (const room of FEATURES[zone].vaults.concat(FEATURES[zone].secrets)) {
+      for (const at of room.chestAt) {
+        const id = 'rc' + (n++);
+        chests[id] = { id, zone, kind: room.kind, room, x: at.x * TILE + TILE / 2, y: at.y * TILE + TILE / 2, looted: false, respawnAt: Infinity };
+        room.chests.push(id);
+      }
+    }
+  }
+})();
+let lastRoomCheck = 0;
+function updateRooms() {
+  const now = Date.now();
+  if (now - lastRoomCheck < 1000) return;
+  lastRoomCheck = now;
+  for (const zone in FEATURES) {
+    const map = DUNGEON_TIERS[zone].map;
+    for (const room of FEATURES[zone].vaults.concat(FEATURES[zone].secrets)) {
+      if (!room.lootedAt) continue;
+      if (now - room.lootedAt < (room.kind === 'vault' ? VAULT_RESPAWN_MS : SECRET_RESPAWN_MS)) continue;
+      let inside = false;   // Tuer erst schliessen, wenn niemand mehr drin ist
+      for (const pid in players) {
+        const pl = players[pid];
+        if (pl.zone !== zone) continue;
+        const tx = Math.floor(pl.x / TILE), ty = Math.floor(pl.y / TILE);
+        if (room.cellKeys.has(tx + ',' + ty) || (tx === room.door.x && ty === room.door.y)) { inside = true; break; }
+      }
+      if (inside) continue;
+      map.open.delete(room.door.x + ',' + room.door.y);
+      room.lootedAt = 0;
+      for (const cid of room.chests) chests[cid].looted = false;
+    }
+  }
+}
+
+// ---------------- Zweite Faehigkeit (Taste T) ----------------
+const ABILITIES2 = {
+  krieger: { name: 'Bollwerk', icon: '🛡️', cd: 18000 },
+  magier:  { name: 'Meteor', icon: '☄️', cd: 16000 },
+  schurke: { name: 'Klingentanz', icon: '🗡️', cd: 14000 }
+};
+function areaDamage(p, x, y, r, dmg) {
+  if (!players[p.id] || p.dead) return;
+  if (p.zone === 'arena') {
+    for (const id in players) {
+      const o = players[id];
+      if (o.id === p.id || o.zone !== 'arena' || o.dead) continue;
+      if (dist(x, y, o.x, o.y) < r + 12) applyPvpDamage(o, dmg, p);
+    }
+  } else {
+    for (const id in monsters) {
+      const m = monsters[id];
+      if ((m.zone || DEFAULT_TIER_KEY) !== p.zone) continue;
+      if (dist(x, y, m.x, m.y) < r + Math.max(12, monsterRadius(m))) hitMonster(m, dmg, p);
+    }
+  }
+}
+function useAbility2(p) {
+  const ab = ABILITIES2[p.cls];
+  if (!ab) return;
+  const now = Date.now();
+  if (now < (p.ability2ReadyAt || 0)) return;
+  p.ability2ReadyAt = now + Math.round(ab.cd * (1 - 0.07 * ((p.skills && p.skills.cd) || 0)));
+  const pw = 1 + 0.1 * ((p.skills && p.skills.power) || 0);
+  revealSecrets(p);
+  if (p.cls === 'krieger') {
+    // Bollwerk: 5 s halber Schaden, sofort 15% Heilung
+    p.guardUntil = now + 5000;
+    p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.15));
+    io.emit('abilityFx', { type: 'guard', x: p.x, y: p.y, r: 60, zone: p.zone, ms: 700 });
+  } else if (p.cls === 'magier') {
+    // Meteor: schlaegt nach 0,9 s an der Zielstelle ein
+    let ax = p.input.aimX, ay = p.input.aimY;
+    if (!ax && !ay) ax = 1;
+    const len = Math.hypot(ax, ay), map = mapFor(p.zone);
+    let reach = Math.max(120, Math.min(300, len)), tx = p.x, ty = p.y;
+    for (; reach >= 0; reach -= 24) {
+      const cx = p.x + (ax / len) * reach, cy = p.y + (ay / len) * reach;
+      if (!map.isWall(Math.floor(cx / TILE), Math.floor(cy / TILE))) { tx = cx; ty = cy; break; }
+    }
+    const R = 95, dmg = Math.round(p.dmg * 3.2 * pw), delay = 900;
+    io.emit('abilityFx', { type: 'meteor', x: tx, y: ty, r: R, zone: p.zone, ms: delay });
+    setTimeout(() => { if (players[p.id]) areaDamage(p, tx, ty, R, dmg); }, delay);
+  } else if (p.cls === 'schurke') {
+    // Klingentanz: drei Schlaege rund um den Schurken
+    const R = 78, dmg = Math.round(p.dmg * 1.1 * pw);
+    for (let i = 0; i < 3; i++) {
+      setTimeout(() => {
+        if (!players[p.id] || p.dead) return;
+        io.emit('abilityFx', { type: 'blades', x: p.x, y: p.y, r: R, zone: p.zone, ms: 300 });
+        areaDamage(p, p.x, p.y, R, dmg);
+      }, i * 320);
+    }
+  }
+}
+
+// ---------------- Saison (monatlich) ----------------
+const SEASON_TIERS = [
+  { pts: 100,  name: 'Bronze',  gold: 500,   essence: 30,  item: 0 },
+  { pts: 500,  name: 'Silber',  gold: 1500,  essence: 80,  item: 2 },
+  { pts: 1500, name: 'Gold',    gold: 4000,  essence: 200, item: 3 },
+  { pts: 4000, name: 'Diamant', gold: 10000, essence: 500, item: 3, extra: true }
+];
+function seasonId() { return new Date().toISOString().slice(0, 7); }
+function seasonEndsAt() { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); }
+// Beim Monatswechsel: Belohnung fuer die erreichte Stufe, dann Punkte auf 0
+function checkSeason(p) {
+  const cur = seasonId();
+  if (!p.season || typeof p.season !== 'object') p.season = { id: '', points: 0 };
+  if (p.season.id === cur) return false;
+  const old = p.season;
+  p.season = { id: cur, points: 0 };
+  if (old.id && old.points >= SEASON_TIERS[0].pts) {
+    let tier = SEASON_TIERS[0];
+    for (const t of SEASON_TIERS) if (old.points >= t.pts) tier = t;
+    p.gold += tier.gold; p.essence += tier.essence;
+    if (tier.item) giveItem(p, genItem(p.level, tier.item));
+    if (tier.extra) giveItem(p, genItem(p.level, 3));
+    io.to(p.id).emit('seasonEnd', { id: old.id, points: old.points, tier: tier.name, gold: tier.gold, essence: tier.essence });
+  }
+  saveAccountProgress(p);
+  return true;
+}
+function addSeasonPoints(p, n) {
+  if (!p || !n) return;
+  checkSeason(p);
+  p.season.points += Math.round(n);
+}
+function sendSeason(p) {
+  io.to(p.id).emit('season', { id: p.season.id, points: p.season.points, endsAt: seasonEndsAt() });
+}
+setInterval(() => {
+  for (const id in players) { if (checkSeason(players[id])) sendSeason(players[id]); }
+}, 5 * 60 * 1000);
+
+// ---------------- Welt-Boss (Raid) ----------------
+const raid = { active: false, bossId: null, endsAt: 0, nextAt: Date.now() + 6 * 60 * 1000, warned: false, joined: new Set(), deaths: {}, perPlayerHp: 0 };
+
+function creditRaid(m, p, dmg) {
+  if (!m.dmgBy || !p || !p.username) return;
+  m.dmgBy[p.username] = (m.dmgBy[p.username] || 0) + dmg;
+}
+function startRaid() {
+  if (raid.active) return false;
+  let sum = 0, cnt = 0;
+  for (const pid in players) { sum += players[pid].level; cnt++; }
+  const bMult = Math.min(5, Math.max(1, 1 + ((cnt ? sum / cnt : 10) - 8) * 0.12));
+  const id = 'raid' + (monsterIdCounter++), baseHp = Math.round(3000 * bMult);
+  monsters[id] = {
+    id, type: 'raidboss', zone: 'raid', raid: true, dmgBy: {}, mult: bMult, dmgMult: Math.pow(bMult, 0.65),
+    name: 'Weltenfresser', x: RAID_CENTER.x, y: RAID_CENTER.y, hp: baseHp, maxHp: baseHp,
+    lastAttack: 0, targetId: null, homeX: RAID_CENTER.x, homeY: RAID_CENTER.y
+  };
+  raid.active = true; raid.bossId = id; raid.endsAt = Date.now() + RAID_DURATION_MS;
+  raid.joined = new Set(); raid.deaths = {}; raid.warned = false; raid.perPlayerHp = Math.round(2500 * bMult);
+  io.emit('announcement', `🐉 Der Weltenfresser ist erschienen! Menü → Raid & Saison → „Raid beitreten“ (ab Level ${RAID_MIN_LEVEL}). ${RAID_DURATION_MS / 60000} Minuten Zeit!`);
+  return true;
+}
+function evacuateRaid() {
+  if (raid.active) return;
+  for (const id in players) {
+    const p = players[id];
+    if (p.zone !== 'raid') continue;
+    p.zone = tierForLevel(p.level);
+    const sp = randomTierSpawn(p.zone);
+    p.x = sp.x; p.y = sp.y; p.hp = p.maxHp; p.dead = false; p.fx = {};
+  }
+  for (const id in items) if (items[id].zone === 'raid') delete items[id];
+}
+function onRaidBossKilled(m, killer) {
+  const entries = Object.entries(m.dmgBy || {}).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((sum, e) => sum + e[1], 0) || 1;
+  const nameOf = (u) => { const o = findOnline(u); return o ? o.name : u; };
+  entries.forEach(([username, dmg], idx) => {
+    const c = findOnline(username);
+    if (!c) return;
+    const share = dmg / total, rank = idx + 1;
+    const gold = Math.round((250 + c.level * 25) * (1 + 3 * share) * goldMult() * goldBonus(c));
+    const ess = 20 + Math.round(60 * share), pts = 60 + Math.round(300 * share);
+    c.gold += gold; c.essence += ess; c.potions += 2;
+    c.stats.goldEarned += gold; c.stats.raidKills++; c.stats.bossKills++;
+    giveKey(c, 2);
+    if (rank === 1) giveItem(c, genItem(c.level, Math.random() < 0.6 ? 3 : 2));
+    else if (rank <= 3) giveItem(c, genItem(c.level, Math.max(2, rollRarity(2))));
+    else if (share >= 0.05) giveItem(c, genItem(c.level, Math.max(1, rollRarity(1.5))));
+    questProgress(c, 'kill', 1, 'boss');
+    questProgress(c, 'gold', gold);
+    addSeasonPoints(c, pts);
+    checkAchievements(c);
+    saveAccountProgress(c);
+    io.to(c.id).emit('raidResult', { win: true, rank, share: Math.round(share * 100), gold, essence: ess, points: pts });
+  });
+  const medals = ['🥇', '🥈', '🥉'];
+  const top = entries.slice(0, 3).map((e, i) => `${medals[i]} ${nameOf(e[0])}`).join('  ');
+  io.emit('announcement', `🏆 Der Weltenfresser ist besiegt! ${top}`);
+  removeBoss(m.id);
+  raid.active = false; raid.nextAt = Date.now() + RAID_INTERVAL_MS; raid.warned = false;
+  setTimeout(evacuateRaid, 25000);
+}
+function raidFailed(m) {
+  for (const [u, dmg] of Object.entries(m.dmgBy || {})) {
+    const c = findOnline(u);
+    if (!c || dmg <= 0) continue;
+    const gold = 100 + c.level * 10;
+    c.gold += gold; c.essence += 10;
+    addSeasonPoints(c, 15);
+    saveAccountProgress(c);
+    io.to(c.id).emit('raidResult', { win: false, gold, essence: 10, points: 15 });
+  }
+  removeBoss(m.id);
+  raid.active = false; raid.nextAt = Date.now() + RAID_INTERVAL_MS; raid.warned = false;
+  io.emit('announcement', '🐉 Der Weltenfresser ist in die Tiefe zurückgekehrt ... Die Zeit war zu knapp.');
+  setTimeout(evacuateRaid, 8000);
+}
+setInterval(() => {
+  const now = Date.now();
+  if (!raid.active) {
+    if (now >= raid.nextAt) {
+      if (Object.keys(players).length) startRaid(); else raid.nextAt = now + 60000;
+    } else if (!raid.warned && raid.nextAt - now < 60000 && Object.keys(players).length) {
+      raid.warned = true;
+      io.emit('announcement', '🐉 In 1 Minute erscheint der Weltenfresser! Macht euch bereit (Menü → Raid & Saison).');
+    }
+    return;
+  }
+  const m = monsters[raid.bossId];
+  if (!m) { raid.active = false; raid.nextAt = now + RAID_INTERVAL_MS; raid.warned = false; return; }
+  if (now >= raid.endsAt) raidFailed(m);
+}, 2000);
+
+const META = {
+  prestigeMin: PRESTIGE_MIN_LEVEL, prestigeMax: PRESTIGE_MAX, classChangeCost: CLASS_CHANGE_COST,
+  raidMinLevel: RAID_MIN_LEVEL, raidMaxDeaths: RAID_MAX_DEATHS,
+  trap: { cycle: TRAP_CYCLE, warnFrom: TRAP_WARN_FROM, activeFrom: TRAP_ACTIVE_FROM },
+  seasonTiers: SEASON_TIERS
+};
+
 function applyPvpDamage(target, dmg, attacker) {
+  if (target.guardUntil && target.guardUntil > Date.now()) dmg = Math.round(dmg * 0.5);
   target.hp -= dmg;
   io.emit('hit', { x: target.x, y: target.y, dmg });
   if (target.hp <= 0 && !target.dead) {
     target.dead = true;
     setTimeout(() => respawnPlayer(target), 2000);
-    if (attacker && attacker !== target) { attacker.stats.pvpKills++; questProgress(attacker, 'pvp', 1); checkAchievements(attacker); }
+    if (attacker && attacker !== target) { attacker.stats.pvpKills++; addSeasonPoints(attacker, 5); questProgress(attacker, 'pvp', 1); checkAchievements(attacker); }
   }
 }
 
@@ -561,6 +945,17 @@ function respawnPlayer(p) {
     sp = ARENA_SPAWN;
   } else if (p.zone === 'bossroom') {
     sp = BOSSROOM_ENTRY;
+  } else if (p.zone === 'raid') {
+    raid.deaths[p.username] = (raid.deaths[p.username] || 0) + 1;
+    if (raid.active && raid.deaths[p.username] <= RAID_MAX_DEATHS) {
+      sp = RAID_ENTRY;
+    } else {
+      notice(p, raid.active ? '💀 Zu oft gefallen: Du musst den Raid verlassen.' : 'Der Raid ist vorbei.');
+      p.zone = tierForLevel(p.level);
+      sp = randomTierSpawn(p.zone);
+    }
+  } else if (p.zone === 'town') {
+    sp = TOWN_SPAWN;
   } else {
     // Beim Respawn automatisch in die zum aktuellen Level passende Stufe wechseln
     p.zone = tierForLevel(p.level);
@@ -585,7 +980,7 @@ function levelUp(p) {
 }
 
 function grantXp(p, amount) {
-  p.xp += Math.round(amount * xpMult());
+  p.xp += Math.round(amount * xpMult() * (1 + 0.10 * (p.prestige || 0)));
   while (p.xp >= p.xpNext) levelUp(p);
 }
 
@@ -621,12 +1016,14 @@ setTimeout(() => {
 
 function onMonsterKilled(m, killer) {
   const zone = m.zone || DEFAULT_TIER_KEY;
+  if (m.type === 'raidboss') { onRaidBossKilled(m, killer); return; }
   if (m.type === 'boss') {
     if (m.id === bossId) bossId = null;
     if (tierBosses[zone] === m.id) delete tierBosses[zone];
     for (const mid in monsters) if (monsters[mid].ownerId === m.id) delete monsters[mid];
     for (let i = 0; i < 4; i++) spawnItem(m.x + (Math.random() * 40 - 20), m.y + (Math.random() * 40 - 20), zone);
     if (killer) killer.potions += 2;
+    if (killer && isDungeonTier(zone)) giveKey(killer, 1);
     io.emit('announcement', `🏆 ${killer ? killer.name : 'Jemand'} hat ${m.name || 'den Boss'} besiegt! Riesiger Loot-Regen!`);
   } else if (m.type === 'treasure') {
     for (let i = 0; i < 10; i++) {
@@ -636,13 +1033,14 @@ function onMonsterKilled(m, killer) {
     io.emit('announcement', `💰 ${killer ? killer.name : 'Jemand'} hat den Schatzgoblin erwischt!`);
   } else {
     spawnItem(m.x, m.y, zone);
+    if (killer && isDungeonTier(zone) && Math.random() < KEY_DROP_MONSTER) giveKey(killer, 1);
   }
   if (killer) {
     const xpAmount = Math.round(MONSTER_TYPES[m.type].xp * Math.pow(m.mult || 1, 0.8) * (1 + guildBonus(killer)));
     const essAmount = m.type === 'boss' ? 25 : Math.max(1, Math.round(Math.pow(m.mult || 1, 0.7)));
     grantXp(killer, xpAmount);
     killer.stats.kills++;
-    if (m.type === 'boss') killer.stats.bossKills++;
+    if (m.type === 'boss') { killer.stats.bossKills++; addSeasonPoints(killer, 15); }
     killer.essence += essAmount;
     shareWithParty(killer, m, xpAmount, essAmount);
     dropGear(killer, m);
@@ -668,6 +1066,7 @@ function rollDamage(p, def) {
 
 function hitMonster(m, dmg, killer) {
   m.hp -= dmg;
+  if (m.raid && killer) creditRaid(m, killer, dmg);
   io.emit('hit', { x: m.x, y: m.y, dmg });
   if (m.hp <= 0 && monsters[m.id]) {
     onMonsterKilled(m, killer);
@@ -780,6 +1179,7 @@ function sendQuests(p) {
 
 function completeQuest(p, i) {
   const q = p.quests[i];
+  addSeasonPoints(p, 8);
   p.gold += q.gold;
   p.potions += q.potions;
   grantXp(p, q.xp);
@@ -850,7 +1250,12 @@ const ACHIEVEMENTS = [
   { id: 'g50k', name: 'Reich', desc: '50000 Gold verdienen', stat: 'goldEarned', thr: 50000, gold: 2000 },
   { id: 'l10', name: 'Level 10', desc: 'Level 10 erreichen', stat: 'level', thr: 10, gold: 100 },
   { id: 'l25', name: 'Level 25', desc: 'Level 25 erreichen', stat: 'level', thr: 25, gold: 500 },
-  { id: 'l50', name: 'Level 50', desc: 'Level 50 erreichen', stat: 'level', thr: 50, gold: 3000 }
+  { id: 'l50', name: 'Level 50', desc: 'Level 50 erreichen', stat: 'level', thr: 50, gold: 3000 },
+  { id: 'v3', name: 'Tresorknacker', desc: '3 Tresore öffnen', stat: 'vaults', thr: 3, gold: 500 },
+  { id: 's1', name: 'Spürnase', desc: '1 Geheimraum entdecken', stat: 'secrets', thr: 1, gold: 300 },
+  { id: 'r1', name: 'Weltenfresser-Jäger', desc: '1 Raid-Boss besiegen', stat: 'raidKills', thr: 1, gold: 1500 },
+  { id: 'r10', name: 'Raid-Veteran', desc: '10 Raid-Bosse besiegen', stat: 'raidKills', thr: 10, gold: 8000 },
+  { id: 'pr1', name: 'Wiedergeboren', desc: 'Die Wiedergeburt abschließen', stat: 'prestige', thr: 1, gold: 2000 }
 ];
 const ACH_IDS = new Set(ACHIEVEMENTS.map(a => a.id));
 const COSMETICS = {
@@ -952,7 +1357,7 @@ function profileFromAccount(a) {
     const it = sanitizeItem(a.equipment && a.equipment[slot]);
     equipment[slot] = it && it.slot === slot ? it : null;
   }
-  const stats = { kills: 0, bossKills: 0, pvpKills: 0, chests: 0, goldEarned: 0, questsDone: 0 };
+  const stats = { kills: 0, bossKills: 0, pvpKills: 0, chests: 0, goldEarned: 0, questsDone: 0, vaults: 0, secrets: 0, raidKills: 0 };
   for (const k in stats) stats[k] = Math.max(0, Number(a.stats && a.stats[k]) || 0);
   const owned = { color: [], hat: [] };
   for (const kind of ['color', 'hat']) {
@@ -972,7 +1377,10 @@ function profileFromAccount(a) {
     achievements: Array.isArray(a.achievements) ? a.achievements.filter(id => ACH_IDS.has(id)) : [],
     guild: typeof a.guild === 'string' ? a.guild.slice(0, 40) : null,
     friends: (Array.isArray(a.friends) ? a.friends : []).filter(x => typeof x === 'string' && x.length >= 3 && x.length <= 20).slice(0, 50),
-    daily: { last: a.daily && typeof a.daily.last === 'string' ? a.daily.last : '', streak: Math.max(0, Number(a.daily && a.daily.streak) || 0) }
+    daily: { last: a.daily && typeof a.daily.last === 'string' ? a.daily.last : '', streak: Math.max(0, Number(a.daily && a.daily.streak) || 0) },
+    keys: Math.max(0, Math.min(99, Number(a.keys) || 0)),
+    prestige: Math.max(0, Math.min(PRESTIGE_MAX, Number(a.prestige) || 0)),
+    season: { id: a.season && typeof a.season.id === 'string' ? a.season.id.slice(0, 10) : '', points: Math.max(0, Number(a.season && a.season.points) || 0) }
   };
 }
 function sendProfile(p) {
@@ -980,7 +1388,7 @@ function sendProfile(p) {
     inventory: p.inventory.map(withEff),
     equipment: { weapon: withEff(p.equipment.weapon), armor: withEff(p.equipment.armor), ring: withEff(p.equipment.ring) },
     skills: p.skills, skillPoints: skillPointsFree(p), cosmetics: p.cosmetics, pet: p.pet,
-    stats: p.stats, achievements: p.achievements, daily: p.daily
+    stats: p.stats, achievements: p.achievements, daily: p.daily, prestige: p.prestige || 0
   });
 }
 function giveItem(p, item) {
@@ -1008,7 +1416,7 @@ function checkAchievements(p) {
   let changed = false;
   for (const def of ACHIEVEMENTS) {
     if (p.achievements.includes(def.id)) continue;
-    const v = def.stat === 'level' ? p.level : p.stats[def.stat];
+    const v = def.stat === 'level' ? p.level : (def.stat === 'prestige' ? (p.prestige || 0) : p.stats[def.stat]);
     if (v >= def.thr) {
       p.achievements.push(def.id);
       p.gold += def.gold;
@@ -1044,7 +1452,7 @@ function updatePet(p) {
   }
   const now = Date.now();
   if (p.dead || now - (p.petAttackAt || 0) < 1100) return;
-  if (!isDungeonTier(p.zone) && p.zone !== 'bossroom') return;
+  if (!isDungeonTier(p.zone) && p.zone !== 'bossroom' && p.zone !== 'raid') return;
   for (const id in monsters) {
     const m = monsters[id];
     if ((m.zone || DEFAULT_TIER_KEY) !== p.zone) continue;
@@ -1165,6 +1573,7 @@ const tierBosses = {};
 
 function damagePlayer(target, dmg) {
   if (target.dead) return;
+  if (target.guardUntil && target.guardUntil > Date.now()) dmg = Math.round(dmg * 0.5);
   target.hp -= dmg;
   io.to(target.id).emit('hit', { x: target.x, y: target.y, dmg });
   if (target.hp <= 0 && !target.dead) {
@@ -1310,6 +1719,7 @@ DUNGEON_TIER_DEFS.forEach((def, i) => {
 
 // ---------------- Trefferflaeche und Fernkampf-Gegner ----------------
 function monsterRadius(m) {
+  if (m.type === 'raidboss') return 46;
   if (m.type === 'boss') return 30;
   const t = MONSTER_TYPES[m.type];
   return (t && t.radius) || 12;
@@ -1350,12 +1760,14 @@ const BOSS_SPECIALS = {
   tier4: ['fan', 'rockfall'],
   tier5: ['rockfall', 'fan', 'enrage'],
   tier6: ['summon', 'fan', 'rockfall', 'enrage'],
-  bossroom: ['summon', 'fan', 'enrage']
+  bossroom: ['summon', 'fan', 'enrage'],
+  raid: ['summon', 'fan', 'rockfall', 'enrage']
 };
 const BOSS_FAN = {
   tier4: { effect: 'slow', color: '#9be8ff' },
   tier5: { effect: 'burn', color: '#ff8a3c' },
-  tier6: { effect: 'poison', color: '#8fff6b' }
+  tier6: { effect: 'poison', color: '#8fff6b' },
+  raid: { effect: 'burn', color: '#c77dff' }
 };
 const BOSS_ADD_MAX = 8;
 
@@ -1608,12 +2020,16 @@ io.on('connection', (socket) => {
       const dungeonTiersPayload = {};
       for (const key in DUNGEON_TIERS) {
         const t = DUNGEON_TIERS[key];
-        dungeonTiersPayload[key] = { name: t.name, minLevel: t.minLevel, rows: t.rows, theme: t.theme };
+        dungeonTiersPayload[key] = { name: t.name, minLevel: t.minLevel, rows: t.rows, theme: t.theme, traps: t.traps };
       }
       socket.emit('init', {
         you: socket.id,
         dungeonTiers: dungeonTiersPayload,
         abilities: ABILITIES,
+        abilities2: ABILITIES2,
+        town: { rows: TOWN_ROWS, npcs: TOWN_NPCS, spawn: TOWN_SPAWN },
+        raidMap: RAID_ROWS,
+        meta: META,
         defs: CLIENT_DEFS,
         monsterDefs: Object.fromEntries(Object.entries(MONSTER_TYPES).map(([k, v]) => [k, { color: v.color, radius: v.radius, ranged: !!v.ranged }])),
         arenaMap: ARENA_ROWS,
@@ -1623,7 +2039,9 @@ io.on('connection', (socket) => {
         isAdmin: players[socket.id].isAdmin
       });
       sendQuests(players[socket.id]);
+      checkSeason(players[socket.id]);
       sendProfile(players[socket.id]);
+      sendSeason(players[socket.id]);
       dailyReward(players[socket.id]);
       checkAchievements(players[socket.id]);
       sendGuild(players[socket.id]);
@@ -1652,6 +2070,7 @@ io.on('connection', (socket) => {
     const def = CLASSES[p.cls];
     if (now - p.lastAttack < def.cooldown) return;
     p.lastAttack = now;
+    revealSecrets(p);
 
     if (p.zone === 'arena') {
       // PvP: Gegner sind andere Spieler in der Arena
@@ -1691,6 +2110,7 @@ io.on('connection', (socket) => {
       if (closest) {
         let dmg = rollDamage(p, def);
         closest.hp -= dmg;
+        if (closest.raid) creditRaid(closest, p, dmg);
         io.emit('hit', { x: closest.x, y: closest.y, dmg });
         if (closest.hp <= 0) {
           onMonsterKilled(closest, p);
@@ -2096,6 +2516,7 @@ io.on('connection', (socket) => {
     else if (kind === 'ambush') runAmbush(zone, p);
     else if (kind === 'blessing') runBlessing(zone);
     else if (kind === 'tierboss') spawnTierBoss(zone);
+    else if (kind === 'raid') { if (!startRaid()) notice(p, 'Es läuft schon ein Raid.'); }
   });
 
   socket.on('guildInfo', () => { const p = players[socket.id]; if (p) sendGuild(p); });
@@ -2239,16 +2660,30 @@ io.on('connection', (socket) => {
     if (dist(p.x, p.y, chest.x, chest.y) > 44) return;
 
     chest.looted = true;
-    chest.respawnAt = Date.now() + CHEST_RESPAWN_MS;
+    chest.respawnAt = chest.room ? Infinity : Date.now() + CHEST_RESPAWN_MS;
+    if (chest.room) chest.room.lootedAt = Date.now();
     const lootMult = (DUNGEON_TIERS[p.zone] && DUNGEON_TIERS[p.zone].lootMult) || 1;
-    const gold = Math.round((20 + Math.floor(Math.random() * 40)) * goldMult() * lootMult * goldBonus(p));
-    const gotPotion = Math.random() < 0.35;
+    const roomMult = chest.kind === 'vault' ? 5 : (chest.kind === 'secret' ? 2.5 : 1);
+    const gold = Math.round((20 + Math.floor(Math.random() * 40)) * roomMult * goldMult() * lootMult * goldBonus(p));
+    const gotPotion = chest.kind === 'vault' ? true : Math.random() < 0.35;
     p.gold += gold;
     if (gotPotion) p.potions += 1;
     p.stats.chests++; p.stats.goldEarned += gold;
     questProgress(p, 'chest', 1);
     questProgress(p, 'gold', gold);
-    if (Math.random() < 0.25) giveItem(p, genItem(p.level, rollRarity(0.5)));
+    if (chest.kind === 'vault') {
+      giveItem(p, genItem(p.level, Math.max(2, rollRarity(2))));
+      giveItem(p, genItem(p.level, rollRarity(1.5)));
+      p.essence += 10 + Math.round(lootMult * 4);
+      p.stats.vaults++; addSeasonPoints(p, 6);
+    } else if (chest.kind === 'secret') {
+      if (Math.random() < 0.5) giveItem(p, genItem(p.level, Math.max(1, rollRarity(1.2))));
+      if (Math.random() < 0.4) giveKey(p, 1);
+      addSeasonPoints(p, 3);
+    } else {
+      if (Math.random() < 0.25) giveItem(p, genItem(p.level, rollRarity(0.5)));
+      if (Math.random() < 0.10) giveKey(p, 1);
+    }
     checkAchievements(p);
     socket.emit('lootResult', { gold, potion: gotPotion });
     saveAccountProgress(p);
@@ -2394,6 +2829,125 @@ io.on('connection', (socket) => {
     io.emit('announcement', `👑 ${p.name} hat den Boss sofort herbeigerufen!`);
   });
 
+  // ---------------- Stadt, 2. Faehigkeit, Tresore, Raid, Wiedergeburt, Saison ----------------
+  socket.on('joinTown', () => {
+    const p = players[socket.id];
+    if (!p || p.dead || p.zone === 'town') return;
+    p.zone = 'town'; p.x = TOWN_SPAWN.x; p.y = TOWN_SPAWN.y; p.hp = p.maxHp; p.fx = {};
+  });
+  socket.on('leaveTown', () => {
+    const p = players[socket.id];
+    if (!p || p.zone !== 'town') return;
+    p.zone = tierForLevel(p.level);
+    const sp = randomTierSpawn(p.zone);
+    p.x = sp.x; p.y = sp.y; p.hp = p.maxHp;
+  });
+
+  socket.on('ability2', () => {
+    const p = players[socket.id];
+    if (!p || p.dead) return;
+    useAbility2(p);
+  });
+
+  socket.on('openDoor', () => {
+    const p = players[socket.id];
+    if (!p || p.dead || !isDungeonTier(p.zone)) return;
+    const feat = FEATURES[p.zone], map = DUNGEON_TIERS[p.zone].map;
+    for (const room of feat.vaults) {
+      const k = room.door.x + ',' + room.door.y;
+      if (map.open.has(k)) continue;
+      if (dist(p.x, p.y, room.door.x * TILE + TILE / 2, room.door.y * TILE + TILE / 2) > 56) continue;
+      if (!p.keys) return notice(p, '🔒 Du brauchst einen Schlüssel. Monster, Truhen und Bosse lassen welche fallen.');
+      p.keys -= 1;
+      map.open.add(k);
+      notice(p, '🔓 Tresortür geöffnet!');
+      saveAccountProgress(p);
+      return;
+    }
+  });
+
+  socket.on('joinRaid', () => {
+    const p = players[socket.id];
+    if (!p || p.dead) return;
+    if (!raid.active || !monsters[raid.bossId]) return notice(p, '🐉 Aktuell läuft kein Raid.');
+    if (p.level < RAID_MIN_LEVEL) return notice(p, `Der Raid ist ab Level ${RAID_MIN_LEVEL}.`);
+    if ((raid.deaths[p.username] || 0) > RAID_MAX_DEATHS) return notice(p, 'Du bist in diesem Raid zu oft gefallen.');
+    if (p.zone !== 'raid') { p.zone = 'raid'; p.x = RAID_ENTRY.x; p.y = RAID_ENTRY.y; p.hp = p.maxHp; p.fx = {}; }
+    if (!raid.joined.has(p.username)) {
+      raid.joined.add(p.username);
+      const m = monsters[raid.bossId];
+      m.maxHp += raid.perPlayerHp; m.hp += raid.perPlayerHp;   // mehr Spieler, mehr Leben
+      announceTo(q => q.zone === 'raid', `⚔️ ${p.name} ist dem Raid beigetreten!`);
+    }
+  });
+  socket.on('leaveRaid', () => {
+    const p = players[socket.id];
+    if (!p || p.zone !== 'raid') return;
+    p.zone = tierForLevel(p.level);
+    const sp = randomTierSpawn(p.zone);
+    p.x = sp.x; p.y = sp.y; p.hp = p.maxHp; p.dead = false;
+  });
+
+  socket.on('prestige', () => {
+    const p = players[socket.id];
+    if (!p || p.dead || !(p.zone === 'town' || isDungeonTier(p.zone))) return;
+    if (p.level < PRESTIGE_MIN_LEVEL) return notice(p, `Die Wiedergeburt ist ab Level ${PRESTIGE_MIN_LEVEL} möglich.`);
+    if ((p.prestige || 0) >= PRESTIGE_MAX) return notice(p, 'Du hast die höchste Wiedergeburtsstufe erreicht.');
+    p.prestige = (p.prestige || 0) + 1;
+    p.level = 1; p.xp = 0; p.xpNext = xpToNextLevel(1);
+    p.skills = {};
+    p.gold += 500 * p.prestige; p.essence += 100;
+    recomputeStats(p);
+    p.hp = p.maxHp; p.fx = {};
+    if (p.zone !== 'town') {
+      p.zone = tierForLevel(p.level);
+      const sp = randomTierSpawn(p.zone);
+      p.x = sp.x; p.y = sp.y;
+    }
+    giveItem(p, genItem(40, 3));
+    checkAchievements(p);
+    saveAccountProgress(p);
+    sendProfile(p);
+    io.emit('announcement', `⭐ ${p.name} ist wiedergeboren (Stufe ${p.prestige})!`);
+  });
+
+  socket.on('changeClass', (d) => {
+    const p = players[socket.id];
+    const cls = d && d.cls;
+    if (!p || p.dead || !CLASSES[cls] || cls === p.cls) return;
+    if (!(p.zone === 'town' || isDungeonTier(p.zone))) return notice(p, 'Klassenwechsel geht nur in der Stadt oder im Dungeon.');
+    if (p.gold < CLASS_CHANGE_COST) return notice(p, `Ein Klassenwechsel kostet ${CLASS_CHANGE_COST} Gold.`);
+    p.gold -= CLASS_CHANGE_COST;
+    p.cls = cls; p.abilityReadyAt = 0; p.ability2ReadyAt = 0; p.critUntil = 0; p.guardUntil = 0;
+    recomputeStats(p);
+    p.hp = p.maxHp;
+    notice(p, `🔄 Du bist jetzt ${CLASSES[cls].name}!`);
+    saveAccountProgress(p);
+    sendProfile(p);
+  });
+
+  socket.on('seasonInfo', () => {
+    const p = players[socket.id];
+    if (!p) return;
+    checkSeason(p);
+    sendSeason(p);
+  });
+  let seasonLb = { at: 0, id: '', rows: [] };
+  socket.on('seasonBoard', async () => {
+    const id = seasonId();
+    if (Date.now() - seasonLb.at > 20000 || seasonLb.id !== id) {
+      let rows = [];
+      if (accountsCol) {
+        try {
+          const docs = await accountsCol.find({ 'season.id': id, banned: { $ne: true } }, { projection: { username: 1, level: 1, prestige: 1, season: 1 } }).sort({ 'season.points': -1 }).limit(10).toArray();
+          rows = docs.map(x => ({ name: x.username, level: x.level, prestige: x.prestige || 0, value: (x.season && x.season.points) || 0 }));
+        } catch (err) { console.error('Saison-Rangliste fehlgeschlagen:', err.message); }
+      }
+      seasonLb = { at: Date.now(), id, rows };
+    }
+    socket.emit('seasonBoard', { id, rows: seasonLb.rows });
+  });
+
   socket.on('disconnect', () => {
     const p = players[socket.id];
     if (p) saveAccountProgress(p);
@@ -2440,7 +2994,9 @@ function tick() {
     }
     updateEffects(p, Date.now());
     updatePet(p);
-    if (!isDungeonTier(p.zone) && p.zone !== 'bossroom') continue;
+    if (p.zone === 'town' && p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.004);   // Brunnen: Heilung in der Stadt
+    if (isDungeonTier(p.zone)) checkTraps(p, Date.now());
+    if (!isDungeonTier(p.zone) && p.zone !== 'bossroom' && p.zone !== 'raid') continue;
     // Items einsammeln (nur passend zur eigenen Zone)
     for (const iid in items) {
       const it = items[iid];
@@ -2452,6 +3008,8 @@ function tick() {
       }
     }
   }
+
+  updateRooms();
 
   // Truhen: respawnen nach Cooldown
   for (const cid in chests) {
@@ -2470,12 +3028,12 @@ function tick() {
       const p = players[pid];
       if (p.dead || p.zone !== mZone) continue;
       const d = dist(m.x, m.y, p.x, p.y);
-      const aggro = MONSTER_TYPES[m.type].ranged ? MONSTER_TYPES[m.type].range + 80 : 180;
+      const aggro = m.type === 'raidboss' ? 1800 : (MONSTER_TYPES[m.type].ranged ? MONSTER_TYPES[m.type].range + 80 : 180);
       if (d < aggro && d < targetDist) { target = p; targetDist = d; }
     }
     if (target) {
       const def = MONSTER_TYPES[m.type];
-      if (m.type === 'boss') { bossSlam(m, def); bossSpecial(m, def); }
+      if (m.type === 'boss' || m.type === 'raidboss') { bossSlam(m, def); bossSpecial(m, def); }
       if (def.ranged) {
         rangedAI(m, def, target, targetDist, mMap);
       } else if (targetDist > def.range) {
@@ -2542,6 +3100,7 @@ function tick() {
         if ((m.zone || DEFAULT_TIER_KEY) !== pr.zone) continue;
         if (dist(pr.x, pr.y, m.x, m.y) < Math.max(16, monsterRadius(m) + 6)) {
           m.hp -= pr.dmg;
+          if (m.raid && players[pr.ownerId]) creditRaid(m, players[pr.ownerId], pr.dmg);
           io.emit('hit', { x: m.x, y: m.y, dmg: pr.dmg });
           if (m.hp <= 0) {
             onMonsterKilled(m, players[pr.ownerId]);
@@ -2569,6 +3128,7 @@ function leanOf(p) {
     pet: p.pet, px: p.petPos ? Math.round(p.petPos.x) : null, py: p.petPos ? Math.round(p.petPos.y) : null,
     fx: fxFlags(p),
     tag: p.guildTag || null,
+    prestige: p.prestige || 0,
     party: p.partyId || null,
     partyLeader: !!(p.partyId && parties[p.partyId] && parties[p.partyId].leader === p.id)
   };
@@ -2577,7 +3137,8 @@ function fullOf(p) {
   return Object.assign(leanOf(p), {
     xp: p.xp, xpNext: p.xpNext, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions,
     speedBoostUntil: p.speedBoostUntil, abilityReadyAt: p.abilityReadyAt || 0, essence: p.essence,
-    upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed
+    upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed,
+    keys: p.keys || 0, ability2ReadyAt: p.ability2ReadyAt || 0, guardUntil: p.guardUntil || 0, seasonPts: p.season ? p.season.points : 0
   });
 }
 
@@ -2598,12 +3159,14 @@ function broadcastState() {
     bucket(z).monsters.push({ id: m.id, type: m.type, zone: z, name: m.name, enraged: !!m.enraged, x: Math.round(m.x), y: Math.round(m.y), hp: Math.round(m.hp), maxHp: m.maxHp });
   }
   for (const id in items) { const it = items[id]; bucket(it.zone || DEFAULT_TIER_KEY).items.push({ id: it.id, type: it.type, x: Math.round(it.x), y: Math.round(it.y), amount: it.amount, zone: it.zone }); }
-  for (const id in chests) { const ch = chests[id]; bucket(ch.zone).chests.push({ id: ch.id, zone: ch.zone, x: Math.round(ch.x), y: Math.round(ch.y), looted: ch.looted }); }
+  for (const id in chests) { const ch = chests[id]; bucket(ch.zone).chests.push({ id: ch.id, zone: ch.zone, x: Math.round(ch.x), y: Math.round(ch.y), looted: ch.looted, kind: ch.kind || 'normal' }); }
   for (const id in projectiles) { const pr = projectiles[id]; bucket(pr.zone).projectiles.push({ id: pr.id, x: Math.round(pr.x), y: Math.round(pr.y), zone: pr.zone, hostile: !!pr.hostile, color: pr.hostile ? pr.color : undefined }); }
   const events = {
     goldRemaining: Math.max(0, goldEventUntil - now),
     xpRemaining: Math.max(0, xpEventUntil - now),
-    bossAlive: !!(bossId && monsters[bossId])
+    bossAlive: !!(bossId && monsters[bossId]),
+    raid: raid.active && monsters[raid.bossId] ? { hp: Math.round(monsters[raid.bossId].hp), maxHp: monsters[raid.bossId].maxHp, endsAt: raid.endsAt, joined: raid.joined.size } : null,
+    raidNextAt: raid.nextAt
   };
   const empty = { monsters: [], items: [], chests: [], projectiles: [] };
   for (const id in players) {
@@ -2613,12 +3176,14 @@ function broadcastState() {
     const others = leans.filter(q => q.id !== id && ((q.zone === me.zone && near(q)) || (me.partyId && q.party === me.partyId)));
     io.to(id).emit('state', {
       players: [fullOf(me)].concat(others),
-      monsters: b.monsters.filter(m => m.type === 'boss' || m.type === 'treasure' || near(m)),
+      monsters: b.monsters.filter(m => m.type === 'boss' || m.type === 'raidboss' || m.type === 'treasure' || near(m)),
       items: b.items.filter(near),
       chests: b.chests.filter(near),
       projectiles: b.projectiles.filter(near),
       events,
-      roster
+      roster,
+      now,
+      doors: Array.from(mapFor(me.zone).open || [])
     });
   }
 }
