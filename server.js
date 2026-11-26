@@ -446,7 +446,8 @@ const TOWN_NPCS = [
   { id: 'quests',  name: 'Questgeberin Mira',  icon: '📜', panel: 'quests',  ...tileCenter(8, 18) },
   { id: 'herald',  name: 'Herold Torben',      icon: '🐉', panel: 'raid',    ...tileCenter(31, 18) },
   { id: 'rebirth', name: 'Meister der Wiedergeburt', icon: '⭐', panel: 'rebirth', ...tileCenter(20, 5) },
-  { id: 'craft',   name: 'Werkstatt',           icon: '🔨', panel: 'craft',   ...tileCenter(20, 18) }
+  { id: 'craft',   name: 'Werkstatt',           icon: '🔨', panel: 'craft',   ...tileCenter(20, 18) },
+  { id: 'joker',   name: 'Gaukler Finn',        icon: '🤡', panel: 'buff',    ...tileCenter(35, 11) }
 ];
 
 function mapFor(zone) {
@@ -509,12 +510,16 @@ function recomputeStats(p) {
 }
 
 const SHOP_ITEMS = {
-  potion: { label: 'Heiltrank', baseCost: 12, scale: 0, maxCount: null },
-  speedpotion: { label: 'Tempo-Trank (15s +60% Tempo)', baseCost: 15, scale: 0, maxCount: null },
-  dmg: { label: 'Waffe schärfen (+2 Schaden)', baseCost: 25, scale: 20, maxCount: 10 },
-  hp: { label: 'Rüstung verstärken (+15 max. HP)', baseCost: 25, scale: 20, maxCount: 10 },
-  speed: { label: 'Leichtere Stiefel (+Tempo)', baseCost: 30, scale: 25, maxCount: 5 }
+  potion: { label: 'Heiltrank', cat: 'verbrauch', baseCost: 12, scale: 0, maxCount: null },
+  speedpotion: { label: 'Tempo-Trank (15s +60% Tempo)', cat: 'verbrauch', baseCost: 15, scale: 0, maxCount: null },
+  dmg: { label: 'Waffe schärfen (+2 Schaden)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
+  hp: { label: 'Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
+  speed: { label: 'Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
 };
+// Trinkgeld-Links: hier die eigenen URLs eintragen (z.B. PayPal.Me oder Ko-fi).
+// Solange leer, zeigt der Client "demnächst" an.
+const DONATE_LINKS = { paypal: '', kofi: '' };
+const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert' };
 function shopCost(itemKey, currentCount) {
   const def = SHOP_ITEMS[itemKey];
   return def.baseCost + def.scale * currentCount;
@@ -2155,6 +2160,7 @@ io.on('connection', (socket) => {
         bossRoomMap: BOSSROOM_ROWS,
         tile: TILE,
         classes: CLASSES,
+        donate: DONATE_LINKS,
         isAdmin: players[socket.id].isAdmin
       });
       sendQuests(players[socket.id]);
@@ -2851,6 +2857,36 @@ io.on('connection', (socket) => {
       recomputeStats(p);
     }
     saveAccountProgress(p);
+  });
+
+  socket.on('jokerBuff', () => {
+    const p = players[socket.id];
+    if (!p || p.dead || p.zone !== 'town') return;
+    const now = Date.now();
+    if (now < (p.jokerAt || 0)) return notice(p, `🤡 Finn macht erst in ${Math.ceil((p.jokerAt - now) / 60000)} Min. wieder einen Spruch.`);
+    p.jokerAt = now + 5 * 60000;
+    const roll = Math.random();
+    if (roll < 0.3) {
+      p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.4));
+      notice(p, '🤡 „Heilkraut!" — du bist wieder fit!');
+    } else if (roll < 0.6) {
+      p.speedBoostUntil = now + 60000;
+      notice(p, '🤡 „Spring in den Sack!" — 60 s Turbo-Tempo!');
+    } else if (roll < 0.85) {
+      p.gold += 60;
+      notice(p, '🤡 „Zaubermünze!" — 60 Gold für dich!');
+    } else {
+      p.essence += 8;
+      notice(p, '🤡 „Glitzerpulver!" — 8 Essenz für dich!');
+    }
+    io.to(p.id).emit('abilityFx', { type: 'nova', x: p.x, y: p.y, r: 60, zone: p.zone });
+  });
+
+  socket.on('emote', (e) => {
+    const p = players[socket.id];
+    const txt = EMOTES[e];
+    if (!p || !txt) return;
+    io.emit('emote', { name: p.name, text: txt });
   });
 
   socket.on('setMagnet', (on) => {

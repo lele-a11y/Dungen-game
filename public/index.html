@@ -81,6 +81,7 @@
   }
   #shopPanel h2 { margin:0 0 4px; color:var(--accent); font-size:19px; text-align:center; }
   #shopPanel p.sub { margin:0 0 14px; text-align:center; color:#9aa2b1; font-size:12px; }
+  .shopCat { margin: 10px 0 4px; font-size: 12px; font-weight: bold; color: var(--accent); text-transform: uppercase; letter-spacing: .5px; }
   .shopItem {
     display:flex; justify-content:space-between; align-items:center;
     background:#0d1117; border:1px solid #2a2f3a; border-radius:8px;
@@ -434,9 +435,23 @@
     <button class="menuOption" id="menuOptionGfx">🎨 Grafik: Hoch</button>
     <button class="menuOption" id="menuOptionMusic">🎵 Musik: an</button>
     <button class="menuOption" id="menuOptionSound">🔊 Ton: an</button>
+    <button class="menuOption" id="menuOptionSonstiges">🧭 Sonstiges</button>
     <button class="menuOption" id="menuOptionMagnet">🧲 Items-Magnet: aus</button>
     <button class="menuOption" id="menuOptionClose">▶️ Weiterspielen</button>
     <button class="menuOption" id="menuOptionLeave">🚪 Spiel verlassen</button>
+  </div>
+
+  <div id="miscPanel" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:40; background:#12161fee; border:1px solid var(--accent); border-radius:14px; padding:18px 22px; min-width:280px; max-width:92vw; color:#fff;">
+    <h2 style="margin:0 0 10px; color:var(--accent); font-size:18px; text-align:center;">🧭 Sonstiges</h2>
+    <div style="font-size:13px; line-height:1.7;">
+      <p style="margin:6px 0;"><b>Leo's Dungeon RPG</b> · v1.0<br><span class="muted">Ein Echtzeit-Multiplayer-Dungeon-RPG.</span></p>
+      <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex</p>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="menuOption" id="miscPaypal" style="flex:1;">💳 PayPal</button>
+        <button class="menuOption" id="miscKofi" style="flex:1;">☕ Ko-fi</button>
+        <button class="menuOption" id="miscClose" style="flex:1;">Schließen</button>
+      </div>
+    </div>
   </div>
 
   <div id="adminPanel">
@@ -628,12 +643,14 @@ const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0
 if (isTouchDevice) document.body.classList.add('touch-active');
 
 const SHOP_ITEMS = {
-  potion: { label: '🧪 Heiltrank', baseCost: 12, scale: 0, maxCount: null },
-  speedpotion: { label: '⚡ Tempo-Trank (15s +60% Tempo)', baseCost: 15, scale: 0, maxCount: null },
-  dmg:    { label: '⚔️ Waffe schärfen (+2 Schaden)', baseCost: 25, scale: 20, maxCount: 10 },
-  hp:     { label: '🛡️ Rüstung verstärken (+15 max. HP)', baseCost: 25, scale: 20, maxCount: 10 },
-  speed:  { label: '👢 Leichtere Stiefel (+Tempo)', baseCost: 30, scale: 25, maxCount: 5 }
+  potion: { label: '🧪 Heiltrank', cat: 'verbrauch', baseCost: 12, scale: 0, maxCount: null },
+  speedpotion: { label: '⚡ Tempo-Trank (15s +60% Tempo)', cat: 'verbrauch', baseCost: 15, scale: 0, maxCount: null },
+  dmg:    { label: '⚔️ Waffe schärfen (+2 Schaden)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
+  hp:     { label: '🛡️ Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
+  speed:  { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
 };
+const SHOP_CATS = { verbrauch: '🧪 Verbrauch', upgrades: '⚔️ Upgrades', echtgeld: '💰 Echtgeld (Trinkgeld)' };
+let DONATE = { paypal: '', kofi: '' };
 function shopCostClient(key, count) {
   const d = SHOP_ITEMS[key];
   return d.baseCost + d.scale * count;
@@ -651,19 +668,47 @@ function renderShop() {
   const box = document.getElementById('shopItems');
   box.innerHTML = '';
   const countKeys = { potion: null, speedpotion: null, dmg: 'upgDmg', hp: 'upgHp', speed: 'upgSpeed' };
+  const cats = {};
   for (const key in SHOP_ITEMS) {
     const def = SHOP_ITEMS[key];
-    const count = countKeys[key] ? (me[countKeys[key]] || 0) : 0;
-    const maxedOut = def.maxCount !== null && count >= def.maxCount;
-    const cost = shopCostClient(key, count);
+    const cat = def.cat || 'verbrauch';
+    (cats[cat] = cats[cat] || []).push(key);
+  }
+  const addHeader = (txt) => {
+    const h = document.createElement('div');
+    h.className = 'shopCat';
+    h.textContent = txt;
+    box.appendChild(h);
+  };
+  for (const cat of ['verbrauch', 'upgrades']) {
+    if (!cats[cat]) continue;
+    addHeader(SHOP_CATS[cat] || cat);
+    for (const key of cats[cat]) {
+      const def = SHOP_ITEMS[key];
+      const count = countKeys[key] ? (me[countKeys[key]] || 0) : 0;
+      const maxedOut = def.maxCount !== null && count >= def.maxCount;
+      const cost = shopCostClient(key, count);
+      const row = document.createElement('div');
+      row.className = 'shopItem';
+      row.innerHTML = `<div class="info">${def.label}${countKeys[key] ? `<div class="cnt">Stufe ${count}${def.maxCount ? '/' + def.maxCount : ''}</div>` : ''}</div>
+        <button ${maxedOut ? 'disabled' : ''} data-key="${key}">${maxedOut ? 'Max' : cost + '🪙'}</button>`;
+      box.appendChild(row);
+    }
+  }
+  addHeader(SHOP_CATS.echtgeld);
+  for (const [id, label] of [['paypal', '💳 PayPal'], ['kofi', '☕ Ko-fi']]) {
     const row = document.createElement('div');
     row.className = 'shopItem';
-    row.innerHTML = `<div class="info">${def.label}${countKeys[key] ? `<div class="cnt">Stufe ${count}${def.maxCount ? '/' + def.maxCount : ''}</div>` : ''}</div>
-      <button ${maxedOut ? 'disabled' : ''} data-key="${key}">${maxedOut ? 'Max' : cost + '🪙'}</button>`;
+    const url = DONATE[id];
+    row.innerHTML = `<div class="info">${label}<div class="cnt">Freiwillig · hilft bei Serverkosten</div></div>
+      <button data-donate="${id}" ${url ? '' : 'disabled'}>${url ? 'Öffnen' : 'bald'}</button>`;
     box.appendChild(row);
   }
   box.querySelectorAll('button[data-key]').forEach(btn => {
     btn.addEventListener('click', () => socket.emit('buyItem', { type: btn.dataset.key }));
+  });
+  box.querySelectorAll('button[data-donate]').forEach(btn => {
+    btn.addEventListener('click', () => { const u = DONATE[btn.dataset.donate]; if (u) window.open(u, '_blank', 'noopener'); });
   });
 }
 document.getElementById('shopClose').addEventListener('click', () => toggleShop(false));
@@ -1398,6 +1443,7 @@ function startGame() {
     myId = data.you; DUNGEON_TIERS = data.dungeonTiers || {}; MONSTER_DEFS = data.monsterDefs || {}; ABILITIES = data.abilities || {}; DEFS = data.defs || {}; ARENA_MAP = data.arenaMap; BOSSROOM_MAP = data.bossRoomMap; TILE = data.tile; CLASSES = data.classes;
     TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {};
     isAdmin = !!data.isAdmin;
+    if (data.donate) DONATE = data.donate;
     if (magnetOn) socket.emit('setMagnet', true);
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'flex';
@@ -1447,6 +1493,7 @@ function startGame() {
   socket.on('chat', (m) => addChat(m.name + ': ' + m.text));
   socket.on('swing', (e) => { if (e && e.zone === currentZone) swingFx[e.id] = Date.now(); });
   socket.on('died', (d) => { pushToast('💀 Du wurdest von ' + (d && d.by ? d.by : 'einem Monster') + ' getötet!', 3500); sfx('hurt', 100); });
+  socket.on('emote', (e) => { if (e && e.name) addChat(`${e.name} ${e.text}!`); });
   socket.on('shopError', (msg) => {
     const tm = document.getElementById('tiersMsg');
     if (tm) { tm.textContent = msg; setTimeout(() => { if (tm.textContent === msg) tm.textContent = ''; }, 3000); }
@@ -1667,8 +1714,11 @@ function bindInput() {
   document.getElementById('mAbility2').addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('ability2'); }, { passive: false });
 }
 
+const EMOTE_CMDS = { '/wave': 'winkt', '/dance': 'tanzt', '/cheer': 'jubelt', '/cry': 'weint', '/laugh': 'lacht', '/flex': 'posiert' };
 function sendChatText(ct) {
   if (!ct) return;
+  const emoteKey = Object.keys(EMOTE_CMDS).find(c => ct.toLowerCase() === c);
+  if (emoteKey) { socket.emit('emote', emoteKey.slice(1)); return; }
   if (ct.startsWith('/gc ')) { if (ct.slice(4).trim()) socket.emit('guildChat', ct.slice(4).trim()); }
   else if (ct.startsWith('/g ')) { if (ct.slice(3).trim()) socket.emit('partyChat', ct.slice(3).trim()); }
   else socket.emit('chat', ct);
@@ -1698,6 +1748,7 @@ function openNpc(panel) {
   else if (panel === 'raid') openBig('raid', 'raid');
   else if (panel === 'rebirth') openBig('char', 'rebirth');
   else if (panel === 'craft') openBig('char', 'craft');
+  else if (panel === 'buff') socket.emit('jokerBuff');
 }
 
 function sendInput() {
@@ -1743,6 +1794,17 @@ document.getElementById('menuOptionMagnet').addEventListener('click', () => {
   updateMagnetBtn();
 });
 updateMagnetBtn();
+function toggleMisc(force) {
+  const el = document.getElementById('miscPanel');
+  const open = (typeof force === 'boolean') ? force : el.style.display === 'none';
+  el.style.display = open ? 'block' : 'none';
+  document.getElementById('miscPaypal').disabled = !DONATE.paypal;
+  document.getElementById('miscKofi').disabled = !DONATE.kofi;
+}
+document.getElementById('menuOptionSonstiges').addEventListener('click', () => { toggleMenu(false); toggleMisc(true); });
+document.getElementById('miscClose').addEventListener('click', () => toggleMisc(false));
+document.getElementById('miscPaypal').addEventListener('click', () => { if (DONATE.paypal) window.open(DONATE.paypal, '_blank', 'noopener'); });
+document.getElementById('miscKofi').addEventListener('click', () => { if (DONATE.kofi) window.open(DONATE.kofi, '_blank', 'noopener'); });
 const smooth = new Map();      // weiche Bewegung: Schluessel -> { x, y, fx, fy, mv, seen }
 const particles = [];
 let frameId = 0, lastFrameAt = Date.now();
