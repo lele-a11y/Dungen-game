@@ -60,34 +60,6 @@ Hobby-Projekt völlig ok.
 
 Alternativen mit ähnlichem Ablauf: Railway.app, Fly.io.
 
-## 4. Auf leo.widescreen.ch einbinden
-
-Da dein Haupthosting (METANET, per FileZilla) kein Node.js ausführen kann,
-bleibt die Website dort – du verlinkst nur auf den extern gehosteten Server.
-
-**Einfachste Variante:** Einen Link/Button auf deiner Seite platzieren:
-
-```html
-<a href="https://leo-dungeon-rpg.onrender.com" target="_blank">
-  ⚔️ Jetzt spielen: Leo's Dungeon
-</a>
-```
-
-**Alternative (eingebettet via iframe)** – lade dazu z.B. eine kleine
-`game.html` mit folgendem Inhalt per FileZilla hoch und verlinke diese:
-
-```html
-<!DOCTYPE html>
-<html>
-<head><title>Leo's Dungeon</title>
-<style>html,body{margin:0;height:100%;}iframe{width:100%;height:100%;border:0;}</style>
-</head>
-<body>
-<iframe src="https://leo-dungeon-rpg.onrender.com" allow="fullscreen"></iframe>
-</body>
-</html>
-```
-
 ## Dateien
 
 - `server.js` – Spiel-Server (Bewegung, Kämpfe, Monster-KI, Items, Leveling)
