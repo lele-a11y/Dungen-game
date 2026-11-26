@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/35361313/README.md)
+[README.md](https://github.com/user-attachments/files/35468764/README.md)
 # Leo's Dungeon RPG – Setup & Deployment
 
 Echtzeit-Multiplayer-Dungeon-RPG (Node.js + Socket.io Server, Canvas-Client).
@@ -242,3 +242,24 @@ Unter 30% Leben tobt ein Boss: schneller, härter, Angriffe öfter. Seine Verst�
 ## Musik
 
 Wird im Browser erzeugt, ohne Dateien: Jeder Dungeon, die Arena und der Boss-Raum haben eine eigene Tonart und Stimmung, Arena, Boss-Raum und Vulkan-Festung zusätzlich einen Puls. Im Menü getrennt von den Soundeffekten ein- und ausschaltbar.
+
+## Update: Stadt, Tresore, Wiedergeburt, Raid & Saison
+
+**Hub-Stadt** (Menü → 🏘️ Zur Stadt): sicherer Ort mit Heilbrunnen und fünf NPCs (Taste F oder Button):
+Händler (Shop), Schmied (Ausrüstung/Verbessern), Questgeberin, Herold (Raid & Saison), Meister der Wiedergeburt.
+
+**Dungeon-Mechaniken** (in jeder Stufe):
+- Stachelfallen: 0,6 s Warnblinken, dann 0,8 s aktiv, 7 % deines max. Lebens als Schaden.
+- Tresorräume: verschlossene Tür (🔑 Schlüssel nötig, F). Schlüssel droppen selten von Monstern, aus Truhen, von Bossen und dem Raid. Drinnen: Truhe mit Epischem und viel Gold. Füllt sich nach 8 Min wieder.
+- Geheimräume: eine Wand, die bei einem Angriff in der Nähe nachgibt (feine Risse, wenn man nah dran ist). Zwei Truhen drin, Schließung nach 5 Min.
+
+**Zweite Fähigkeit (Taste T, auf dem Handy eigener Button):**
+Krieger *Bollwerk* (5 s halber Schaden + 15 % Heilung), Magier *Meteor* (Einschlag nach 0,9 s), Schurke *Klingentanz* (3 Schläge rundherum).
+
+**Wiedergeburt** (Charakter → Aufstieg, ab Level 50, max. Stufe 10): Level startet bei 1, dauerhaft +6 % Leben/Schaden und +10 % XP je Stufe, dazu Gold, Essenz und eine legendäre Ausrüstung. Dort auch der **Klassenwechsel** (750 Gold).
+
+**Raid „Weltenfresser“**: alle ~35 Min für 10 Min in eigener Arena (Admin: Button „Raid jetzt starten“). Mehr Helden = mehr Boss-Leben. Beute nach Schadensanteil (Platz 1 meist Legendär, Top 3 Episch), max. 5 Tode je Raid.
+
+**Saison** (monatlich, UTC): Punkte aus Quests, Bossen, Tresoren, Geheimräumen, Arena und vor allem dem Raid. Zum Monatswechsel Belohnung nach Stufe (Bronze/Silber/Gold/Diamant), Punkte starten neu, Top 10 im Reiter „Saison“.
+
+Neue Account-Felder in MongoDB: `keys`, `prestige`, `season {id, points}`; neue Stats: `vaults`, `secrets`, `raidKills`.
