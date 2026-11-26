@@ -621,7 +621,7 @@ let nearestChestId = null;
 let isAdmin = false;
 let pendingTpaFromId = null;
 let TOWN = null, RAID_MAP = [], ABILITIES2 = {}, META = {};
-let serverOffset = 0, openDoors = new Set(), mySeason = null, lastSeasonLb = null, lastRaidResult = null;
+let serverOffset = 0, openDoors = new Set(), mySeason = null, myWeek = null, lastSeasonLb = null, lastRaidResult = null;
 let nearInteract = null, interactLabel = '';
 
 const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -999,8 +999,8 @@ function bigBody() {
   } else if (key === 'social:guild') {
     if (myGuild) {
       const iLead = myGuild.leader === myGuild.you;
-      h += `<div class="itemRow"><div><b>🏰 ${esc(myGuild.name)}</b> <span class="muted">[${esc(myGuild.tag)}] · ${myGuild.members.length}/20 Mitglieder</span>
-        <div class="meta">+5% XP pro Gildenmitglied in deiner Nähe (max. +15%) · Gildenchat: /gc Text</div></div>
+      h += `<div class="itemRow"><div><b>🏰 ${esc(myGuild.name)}</b> <span class="muted">[${esc(myGuild.tag)}] · Level ${myGuild.level || 0} · ${myGuild.members.length}/20 Mitglieder</span>
+        <div class="meta">+5% XP pro Gildenmitglied in deiner Nähe +1% pro Gildenlevel (max. +25%) · Gildenchat: /gc Text</div></div>
         <div class="acts"><button class="alt" data-act="guildLeave" data-arg="">Verlassen</button>${iLead ? '<button class="alt" data-act="guildDisband" data-arg="">Auflösen</button>' : ''}</div></div>`;
       h += '<h3>Mitglieder</h3>' + myGuild.members.map(m => `<div class="itemRow" style="border-left-color:${m.online ? '#8ee08e' : '#2a2f3a'}"><div>${m.online ? '🟢' : '⚫'} ${m.username === myGuild.leader ? '👑 ' : ''}<b>${esc(m.online ? m.name : m.username)}</b> <span class="muted">${m.online ? 'Level ' + m.level : 'offline'}</span></div>
         <div class="acts">${iLead && m.username !== myGuild.you ? `<button class="alt" data-act="guildKick" data-arg="${esc(m.username)}">Entfernen</button>` : ''}</div></div>`).join('');
@@ -1057,6 +1057,10 @@ function bigBody() {
     if (next) { const base = cur ? cur.pts : 0; h += `<div class="questRow"><div class="qBar"><div style="width:${Math.min(100, Math.round((pts - base) / (next.pts - base) * 100))}%"></div></div><div class="qMeta">Noch ${next.pts - pts} Punkte bis ${next.name}</div></div>`; }
     h += tiers.map(t => `<div class="itemRow" style="border-left-color:${pts >= t.pts ? '#8ee08e' : '#2a2f3a'}"><div><b>${pts >= t.pts ? '✅ ' : ''}${t.name}</b> <span class="muted">ab ${t.pts} Punkten</span><div class="meta">${t.gold} Gold · ${t.essence} Essenz${t.item ? ' · Ausrüstung' : ''}${t.extra ? ' · legendäres Extra' : ''}</div></div></div>`).join('');
     h += '<p class="muted">Punkte gibt es für Quests (8), Dungeon-Bosse (15), Tresore (6), Geheimräume (10), Arena-Siege (5) und besonders für den Raid. Am Monatsende bekommst du die Belohnung der erreichten Stufe, danach startet die Saison neu.</p>';
+    if (myWeek) {
+      const wDays = Math.max(0, Math.ceil((myWeek.endsAt - Date.now()) / 86400000));
+      h += `<h3>📅 Wochen-Challenge</h3><div class="muted">Woche ${esc(myWeek.id)} · endet in ${wDays} Tag(en) · ${myWeek.points} Punkte</div><p class="muted">Gleiche Punkte wie die Saison, aber jede Woche neu. Belohnung: die Hälfte der Saison-Belohnung der erreichten Stufe.</p>`;
+    }
     h += '<h3>Top 10 dieser Saison</h3>';
     h += !lastSeasonLb ? '<p class="muted">Lade ...</p>' : (lastSeasonLb.rows.length ? lastSeasonLb.rows.map((r, i) => `<div class="itemRow"><div><b>${i + 1}. ${r.prestige ? '★' + r.prestige + ' ' : ''}${esc(r.name)}</b> <span class="muted">Level ${r.level}</span></div><div><b>${r.value}</b></div></div>`).join('') : '<p class="muted">Noch keine Einträge.</p>');
   } else if (key.startsWith('rank:')) {
@@ -1191,8 +1195,10 @@ function renderTiersPanel() {
     const t = DUNGEON_TIERS[key];
     const locked = me.level < t.minLevel;
     const current = me.zone === key;
+    const rec = me.bossBest && me.bossBest[key];
+    const recTxt = rec ? ` · ⏱️ ${Math.floor(rec / 60)}:${String(rec % 60).padStart(2, '0')}` : '';
     return `<div class="tierRow ${current ? 'current' : ''} ${locked ? 'locked' : ''}">
-      <div><div>🏰 ${t.name}</div><div class="tierMeta">${locked ? '🔒 ab Level ' + t.minLevel : 'ab Level ' + t.minLevel}${current ? ' · du bist hier' : ''}</div></div>
+      <div><div>🏰 ${t.name}</div><div class="tierMeta">${locked ? '🔒 ab Level ' + t.minLevel : 'ab Level ' + t.minLevel}${current ? ' · du bist hier' : ''}${recTxt}</div></div>
       <button data-tier="${key}" ${locked || current ? 'disabled' : ''}>Betreten</button>
     </div>`;
   }).join('');
@@ -1476,6 +1482,8 @@ function startGame() {
   socket.on('season', (r) => { mySeason = r; if (bigKind === 'raid') renderBig(); });
   socket.on('seasonBoard', (r) => { lastSeasonLb = r; if (bigKind === 'raid') renderBig(); });
   socket.on('seasonEnd', (r) => pushToast('🏅 Saison ' + r.id + ' beendet: ' + r.tier + ' (' + r.points + ' Punkte) · +' + r.gold + ' Gold, +' + r.essence + ' Essenz', 9000));
+  socket.on('week', (r) => { myWeek = r; if (bigKind === 'raid') renderBig(); });
+  socket.on('weekEnd', (r) => pushToast('📅 Woche ' + r.id + ' beendet: ' + r.tier + ' (' + r.points + ' Punkte) · +' + r.gold + ' Gold, +' + r.essence + ' Essenz', 9000));
   socket.on('raidResult', (r) => {
     lastRaidResult = r;
     pushToast(r.win ? '🏆 Raid gewonnen! Platz ' + r.rank + ' (' + r.share + '% Schaden): +' + r.gold + ' Gold, +' + r.essence + ' Essenz, +' + r.points + ' Saisonpunkte' : '🐉 Raid verloren. Trostpreis: +' + r.gold + ' Gold', 9000);

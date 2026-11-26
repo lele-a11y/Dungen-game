@@ -68,7 +68,7 @@ async function createAccount(username, passwordHash, cls) {
     upgDmg: 0, upgHp: 0, upgSpeed: 0, quests: [],
     inventory: [], equipment: {}, skills: {}, essence: 0, cosmetics: {}, pet: null,
     stats: {}, achievements: [], daily: {}, friends: [], guild: null,
-    keys: 0, prestige: 0, season: { id: '', points: 0 },
+    keys: 0, prestige: 0, season: { id: '', points: 0 }, week: { id: '', points: 0 }, bossBest: {},
     createdAt: new Date()
   };
   if (accountsCol) await accountsCol.insertOne(doc);
@@ -85,7 +85,8 @@ async function saveAccountProgress(p) {
         upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, quests: p.quests || [],
         inventory: p.inventory || [], equipment: p.equipment || {}, skills: p.skills || {}, essence: p.essence || 0,
         cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null,
-        keys: p.keys || 0, prestige: p.prestige || 0, season: p.season || { id: '', points: 0 }
+        keys: p.keys || 0, prestige: p.prestige || 0, season: p.season || { id: '', points: 0 },
+        week: p.week || { id: '', points: 0 }, bossBest: p.bossBest || {}
       } }
     );
   } catch (err) {
@@ -827,15 +828,66 @@ function checkSeason(p) {
 }
 function addSeasonPoints(p, n) {
   if (!p || !n) return;
+  const pts = Math.round(n);
   checkSeason(p);
-  p.season.points += Math.round(n);
+  p.season.points += pts;
+  checkWeek(p);
+  p.week.points += pts;
+  guildGainXp(p, pts);
+}
+function guildGainXp(p, n) {
+  if (!p.guild) return;
+  const g = guildCache.get(p.guild);
+  if (!g) return;
+  g.xp = (g.xp || 0) + n;
+  saveGuild(g);
 }
 function sendSeason(p) {
   io.to(p.id).emit('season', { id: p.season.id, points: p.season.points, endsAt: seasonEndsAt() });
 }
 setInterval(() => {
-  for (const id in players) { if (checkSeason(players[id])) sendSeason(players[id]); }
+  for (const id in players) {
+    const p = players[id];
+    if (checkSeason(p)) sendSeason(p);
+    if (checkWeek(p)) sendWeek(p);
+  }
 }, 5 * 60 * 1000);
+
+// ---------------- Wochen-Challenge ----------------
+function weekId() {
+  const d = new Date();
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return date.getUTCFullYear() + '-W' + String(week).padStart(2, '0');
+}
+function weekEndsAt() {
+  const d = new Date();
+  const day = d.getUTCDay() || 7;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + (8 - day));
+}
+function checkWeek(p) {
+  const cur = weekId();
+  if (!p.week || typeof p.week !== 'object') p.week = { id: '', points: 0 };
+  if (p.week.id === cur) return false;
+  const old = p.week;
+  p.week = { id: cur, points: 0 };
+  if (old.id && old.points >= SEASON_TIERS[0].pts) {
+    let tier = SEASON_TIERS[0];
+    for (const t of SEASON_TIERS) if (old.points >= t.pts) tier = t;
+    const gold = Math.round(tier.gold / 2), essence = Math.round(tier.essence / 2);
+    p.gold += gold; p.essence += essence;
+    if (tier.item) giveItem(p, genItem(p.level, tier.item));
+    io.to(p.id).emit('weekEnd', { id: old.id, points: old.points, tier: tier.name, gold, essence });
+  }
+  saveAccountProgress(p);
+  return true;
+}
+function sendWeek(p) {
+  io.to(p.id).emit('week', { id: p.week.id, points: p.week.points, endsAt: weekEndsAt() });
+}
 
 // ---------------- Welt-Boss (Raid) ----------------
 const raid = { active: false, bossId: null, endsAt: 0, nextAt: Date.now() + 6 * 60 * 1000, warned: false, joined: new Set(), deaths: {}, perPlayerHp: 0 };
@@ -1039,6 +1091,15 @@ function onMonsterKilled(m, killer) {
     if (killer) killer.potions += 2;
     if (killer && isDungeonTier(zone)) giveKey(killer, 1);
     io.emit('announcement', `🏆 ${killer ? killer.name : 'Jemand'} hat ${m.name || 'den Boss'} besiegt! Riesiger Loot-Regen!`);
+    if (killer && isDungeonTier(zone) && m.spawnAt) {
+      const secs = Math.max(1, Math.round((Date.now() - m.spawnAt) / 1000));
+      const bb = killer.bossBest || (killer.bossBest = {});
+      if (!bb[zone] || secs < bb[zone]) {
+        bb[zone] = secs;
+        saveAccountProgress(killer);
+        notice(killer, `⏱️ Neuer Boss-Rekord in ${(DUNGEON_TIERS[zone] || {}).name || zone}: ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}!`);
+      }
+    }
   } else if (m.type === 'treasure') {
     for (let i = 0; i < 10; i++) {
       const it = spawnItem(m.x + (Math.random() * 60 - 30), m.y + (Math.random() * 60 - 30), zone, 'gold');
@@ -1408,7 +1469,9 @@ function profileFromAccount(a) {
     daily: { last: a.daily && typeof a.daily.last === 'string' ? a.daily.last : '', streak: Math.max(0, Number(a.daily && a.daily.streak) || 0) },
     keys: Math.max(0, Math.min(99, Number(a.keys) || 0)),
     prestige: Math.max(0, Math.min(PRESTIGE_MAX, Number(a.prestige) || 0)),
-    season: { id: a.season && typeof a.season.id === 'string' ? a.season.id.slice(0, 10) : '', points: Math.max(0, Number(a.season && a.season.points) || 0) }
+    season: { id: a.season && typeof a.season.id === 'string' ? a.season.id.slice(0, 10) : '', points: Math.max(0, Number(a.season && a.season.points) || 0) },
+    week: { id: a.week && typeof a.week.id === 'string' ? a.week.id.slice(0, 10) : '', points: Math.max(0, Number(a.week && a.week.points) || 0) },
+    bossBest: (a.bossBest && typeof a.bossBest === 'object') ? a.bossBest : {}
   };
 }
 function sendProfile(p) {
@@ -1664,7 +1727,7 @@ function spawnTierBoss(zone) {
   const name = TIER_BOSS_NAMES[zone] || 'Dungeon-Boss';
   const x = tile.x * TILE + TILE / 2, y = tile.y * TILE + TILE / 2;
   monsters[id] = {
-    id, type: 'boss', zone, mult: tier.monsterMult, dmgMult: tier.dmgMult || Math.pow(tier.monsterMult, 0.65), name,
+    id, type: 'boss', zone, mult: tier.monsterMult, dmgMult: tier.dmgMult || Math.pow(tier.monsterMult, 0.65), name, spawnAt: Date.now(),
     hp, maxHp: hp, x, y, lastAttack: 0, targetId: null, homeX: x, homeY: y
   };
   tierBosses[zone] = id;
@@ -1920,6 +1983,7 @@ function bossSpecial(m, def) {
 // ---------------- Gilden ----------------
 const GUILD_MAX = 20;
 const GUILD_COST = 500;
+function guildLevel(g) { return Math.min(10, Math.floor(Math.sqrt(Math.max(0, g.xp || 0) / 100))); }
 const guildCache = new Map();    // key -> { key, name, tag, leader, members:[username] }
 const guildInvites = {};         // Ziel-Socket -> { fromId, guild, expires }
 
@@ -1932,25 +1996,28 @@ async function loadGuild(key) {
   return g || null;
 }
 async function saveGuild(g) {
-  if (guildsCol) await guildsCol.updateOne({ key: g.key }, { $set: { name: g.name, tag: g.tag, leader: g.leader, members: g.members } });
+  if (guildsCol) await guildsCol.updateOne({ key: g.key }, { $set: { name: g.name, tag: g.tag, leader: g.leader, members: g.members, xp: g.xp || 0, level: guildLevel(g) } });
 }
 function guildOnline(g) { return g.members.map(u => findOnline(u)).filter(Boolean); }
 function sendGuild(p) {
   const g = p.guild && guildCache.get(p.guild);
   io.to(p.id).emit('guild', g ? {
     name: g.name, tag: g.tag, leader: g.leader, you: p.username,
+    level: guildLevel(g), xp: g.xp || 0,
     members: g.members.map(u => { const o = findOnline(u); return { username: u, online: !!o, name: o ? o.name : null, level: o ? o.level : null }; })
   } : null);
 }
 function refreshGuildMembers(g) { for (const o of guildOnline(g)) sendGuild(o); }
 function guildBonus(p) {
   if (!p.guild) return 0;
+  const g = guildCache.get(p.guild);
+  const lvlBonus = g ? Math.min(0.10, guildLevel(g) * 0.01) : 0;
   let n = 0;
   for (const id in players) {
     const o = players[id];
     if (o.id !== p.id && o.guild === p.guild && o.zone === p.zone && !o.dead && dist(o.x, o.y, p.x, p.y) < 1000) n++;
   }
-  return Math.min(0.15, n * 0.05);
+  return Math.min(0.25, n * 0.05 + lvlBonus);
 }
 function setGuild(p, g) {
   p.guild = g ? g.key : null;
@@ -2094,6 +2161,8 @@ io.on('connection', (socket) => {
       checkSeason(players[socket.id]);
       sendProfile(players[socket.id]);
       sendSeason(players[socket.id]);
+      checkWeek(players[socket.id]);
+      sendWeek(players[socket.id]);
       dailyReward(players[socket.id]);
       checkAchievements(players[socket.id]);
       sendGuild(players[socket.id]);
@@ -2990,6 +3059,8 @@ io.on('connection', (socket) => {
     if (!p) return;
     checkSeason(p);
     sendSeason(p);
+    checkWeek(p);
+    sendWeek(p);
   });
   let seasonLb = { at: 0, id: '', rows: [] };
   socket.on('seasonBoard', async () => {
@@ -3198,7 +3269,8 @@ function fullOf(p) {
     xp: p.xp, xpNext: p.xpNext, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions,
     speedBoostUntil: p.speedBoostUntil, abilityReadyAt: p.abilityReadyAt || 0, essence: p.essence,
     upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed,
-    keys: p.keys || 0, ability2ReadyAt: p.ability2ReadyAt || 0, guardUntil: p.guardUntil || 0, seasonPts: p.season ? p.season.points : 0
+    keys: p.keys || 0, ability2ReadyAt: p.ability2ReadyAt || 0, guardUntil: p.guardUntil || 0, seasonPts: p.season ? p.season.points : 0,
+    bossBest: p.bossBest || {}
   });
 }
 
