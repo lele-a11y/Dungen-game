@@ -124,7 +124,7 @@ Im Menü unter "Dungeon wählen" kannst du jederzeit in niedrigere Dungeons wech
 | Der Abgrund | 50 | Labyrinth | Dämon, Troll, Hexer, Säurespucker |
 
 Die Werte (Level, Stärke, Monster) stehen oben in `server.js` in `DUNGEON_TIER_DEFS` und lassen sich dort anpassen.
-Die Minimap oben rechts zeigt dich (weiss), andere Spieler (blau) und den Boss (rot).
+Die Minimap oben rechts zeigt nur den von dir erkundeten Bereich (Unerforschtes bleibt verborgen, bis du in die Nähe kommst) mit dir (weiss), anderen Spielern (blau), dem Boss (rot) und Truhen.
 
 ## Klassen-Fähigkeiten (Taste Q, Mobile: Button rechts unten)
 
@@ -218,7 +218,8 @@ Die Datei enthält dein Datenbank-Passwort: **nie ins GitHub-Repo hochladen** (s
 
 ## Boss-Fähigkeiten
 
-Jeder Boss hat neben dem Bodenschlag eigene Angriffe (mit Warnzeichen):
+Jeder Boss hat neben dem Bodenschlag eigene Angriffe (mit Warnzeichen).
+Zusätzlich können Bosse je nach Dungeon einen radialen Geschosshagel (Volley) und Regeneration (Heal, nur unter 60% Leben) einsetzen:
 
 | Dungeon | Boss | Fähigkeiten |
 |---|---|---|

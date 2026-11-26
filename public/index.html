@@ -1987,6 +1987,7 @@ function drawMonster(m, sx, sy, s, t, meSx, meSy) {
   } else {
     if (m.hp < m.maxHp) hpBar(sx - r * 1.2, barY, r * 2.4, 4, m.hp / m.maxHp);
     if (m.type === 'treasure') outlinedText('💰 Schatzgoblin', sx, barY - 4, '#ffd700', 'bold 11px Verdana');
+    else if (md.name) outlinedText(md.name, sx, barY - 4, '#e8e4d8', '10px Verdana');
   }
 }
 
@@ -2394,6 +2395,53 @@ function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
 
 // ---------------- Minimap ----------------
 const minimapImages = {};
+const exploredMaps = {};   // zone -> Set von aufgedeckten Kachel-Indizes
+const fogImages = {};      // zone -> { img, count, at }
+const FOG_REVEAL_RADIUS = 8;
+function tileIndex(x, y, w) { return y * w + x; }
+function revealAround(me, zone, rows) {
+  const w = rows[0].length, h = rows.length;
+  let set = exploredMaps[zone];
+  if (!set) set = exploredMaps[zone] = new Set();
+  const cx = Math.floor(me.x / TILE), cy = Math.floor(me.y / TILE), R2 = FOG_REVEAL_RADIUS * FOG_REVEAL_RADIUS;
+  for (let dy = -FOG_REVEAL_RADIUS; dy <= FOG_REVEAL_RADIUS; dy++) {
+    for (let dx = -FOG_REVEAL_RADIUS; dx <= FOG_REVEAL_RADIUS; dx++) {
+      if (dx * dx + dy * dy > R2) continue;
+      const tx = cx + dx, ty = cy + dy;
+      if (tx < 0 || ty < 0 || tx >= w || ty >= h) continue;
+      set.add(tileIndex(tx, ty, w));
+    }
+  }
+}
+function isExplored(x, y, zone, rows) {
+  const set = exploredMaps[zone];
+  if (!set) return false;
+  const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+  if (tx < 0 || ty < 0 || ty >= rows.length || tx >= rows[0].length) return false;
+  return set.has(tileIndex(tx, ty, rows[0].length));
+}
+function getFogImage(zone, rows) {
+  const set = exploredMaps[zone];
+  if (!set || !set.size) return null;
+  const w = rows[0].length, h = rows.length;
+  let f = fogImages[zone];
+  const now = Date.now();
+  if (f && f.count === set.size) return f.img;
+  if (f && now - f.at < 400) return f.img;   // waehrend des Laufens nur alle 400 ms neu zeichnen
+  const img = document.createElement('canvas');
+  img.width = w; img.height = h;
+  const ictx = img.getContext('2d');
+  const data = ictx.createImageData(w, h);
+  for (const k of set) {
+    const tx = k % w, ty = (k / w) | 0;
+    if (ty >= h || rows[ty][tx] !== '0') continue;
+    const i = (ty * w + tx) * 4;
+    data.data[i] = 130; data.data[i + 1] = 140; data.data[i + 2] = 160; data.data[i + 3] = 150;
+  }
+  ictx.putImageData(data, 0, 0);
+  fogImages[zone] = { img, count: set.size, at: now };
+  return img;
+}
 function getMinimapImage(zone, rows) {
   if (minimapImages[zone]) return minimapImages[zone];
   const h = rows.length, w = rows[0].length;
@@ -2421,7 +2469,9 @@ function drawMinimap(me, rows, zone) {
   const mctx = mm.getContext('2d');
   mctx.clearRect(0, 0, cw, ch);
   mctx.imageSmoothingEnabled = false;
-  mctx.drawImage(getMinimapImage(zone, rows), 0, 0, w, h, 0, 0, cw, ch);
+  revealAround(me, zone, rows);
+  const fog = getFogImage(zone, rows);
+  mctx.drawImage(fog || getMinimapImage(zone, rows), 0, 0, w, h, 0, 0, cw, ch);
   const dot = (x, y, r, color) => {
     mctx.beginPath();
     mctx.arc(x / TILE * scale, y / TILE * scale, r, 0, Math.PI * 2);
@@ -2430,10 +2480,11 @@ function drawMinimap(me, rows, zone) {
   };
   for (const m of world.monsters) {
     if (m.zone !== zone) continue;
+    if (!isExplored(m.x, m.y, zone, rows)) continue;
     if (m.type === 'boss' || m.type === 'raidboss') dot(m.x, m.y, m.type === 'raidboss' ? 6 : 4, '#ff4d4d');
     else if (m.type === 'treasure') dot(m.x, m.y, 3, '#ffd700');
   }
-  for (const p of world.players) if (p.id !== myId && p.zone === zone && !p.dead) dot(p.x, p.y, 2.5, '#6fd1ff');
+  for (const p of world.players) if (p.id !== myId && p.zone === zone && !p.dead && isExplored(p.x, p.y, zone, rows)) dot(p.x, p.y, 2.5, '#6fd1ff');
   dot(me.x, me.y, 3, '#ffffff');
 }
 

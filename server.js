@@ -526,19 +526,19 @@ let itemIdCounter = 0;
 let projectileIdCounter = 0;
 
 const MONSTER_TYPES = {
-  goblin: { hp: 40, dmg: 8, speed: 1.3, xp: 15, range: 30, cooldown: 900, color: '#8e7c4d', radius: 12 },
-  ork:    { hp: 95, dmg: 16, speed: 0.9, xp: 40, range: 34, cooldown: 1200, color: '#5b4636', radius: 16 },
-  slime:    { hp: 30, dmg: 6, speed: 0.8, xp: 10, range: 28, cooldown: 1000, color: '#55c26b', radius: 11, effect: 'slow' },
-  bat:      { hp: 25, dmg: 7, speed: 2.0, xp: 12, range: 26, cooldown: 700, color: '#7a5aa0', radius: 9, effect: 'poison' },
-  skeleton: { hp: 70, dmg: 14, speed: 1.1, xp: 30, range: 32, cooldown: 1000, color: '#d8d8c8', radius: 13 },
-  troll:    { hp: 180, dmg: 24, speed: 0.8, xp: 70, range: 40, cooldown: 1300, color: '#4f7a4a', radius: 18, effect: 'slow' },
-  demon:    { hp: 260, dmg: 34, speed: 1.2, xp: 110, range: 38, cooldown: 1000, color: '#c03a3a', radius: 16, effect: 'burn' },
-  treasure: { hp: 150, dmg: 0, speed: 2.3, xp: 40, range: 20, cooldown: 99999, color: '#ffd700', radius: 10 },
-  archer:  { hp: 45, dmg: 11, speed: 0.95, xp: 22, range: 260, cooldown: 1700, color: '#c9a66b', radius: 11, ranged: { speed: 6, life: 60, color: '#f1e3b0' } },
-  caster:  { hp: 60, dmg: 17, speed: 0.8, xp: 38, range: 300, cooldown: 2300, color: '#9b4dca', radius: 12, effect: 'burn', ranged: { speed: 4.5, life: 80, color: '#ff8a3c' } },
-  spitter: { hp: 70, dmg: 13, speed: 0.7, xp: 30, range: 240, cooldown: 2000, color: '#7bd05a', radius: 13, effect: 'poison', ranged: { speed: 4, life: 75, color: '#8fff6b' } },
-  raidboss: { hp: 1, dmg: 38, speed: 1.1, xp: 0, range: 58, cooldown: 1000, color: '#7d3cff', radius: 44, name: 'Weltenfresser' },
-  boss:   { hp: 900, dmg: 22, speed: 1.0, xp: 400, range: 48, cooldown: 1100, color: '#c0392b', radius: 26, name: 'Dungeon-Wächter' }
+  goblin: { name: 'Goblin', hp: 40, dmg: 8, speed: 1.3, xp: 15, range: 30, cooldown: 900, color: '#8e7c4d', radius: 12 },
+  ork:    { name: 'Ork', hp: 95, dmg: 16, speed: 0.9, xp: 40, range: 34, cooldown: 1200, color: '#5b4636', radius: 16 },
+  slime:    { name: 'Schleim', hp: 30, dmg: 6, speed: 0.8, xp: 10, range: 28, cooldown: 1000, color: '#55c26b', radius: 11, effect: 'slow' },
+  bat:      { name: 'Fledermaus', hp: 25, dmg: 7, speed: 2.0, xp: 12, range: 26, cooldown: 700, color: '#7a5aa0', radius: 9, effect: 'poison' },
+  skeleton: { name: 'Skelett', hp: 70, dmg: 14, speed: 1.1, xp: 30, range: 32, cooldown: 1000, color: '#d8d8c8', radius: 13 },
+  troll:    { name: 'Troll', hp: 180, dmg: 24, speed: 0.8, xp: 70, range: 40, cooldown: 1300, color: '#4f7a4a', radius: 18, effect: 'slow' },
+  demon:    { name: 'Dämon', hp: 260, dmg: 34, speed: 1.2, xp: 110, range: 38, cooldown: 1000, color: '#c03a3a', radius: 16, effect: 'burn' },
+  treasure: { name: 'Schatzgoblin', hp: 150, dmg: 0, speed: 2.3, xp: 40, range: 20, cooldown: 99999, color: '#ffd700', radius: 10 },
+  archer:  { name: 'Bogenschütze', hp: 45, dmg: 11, speed: 0.95, xp: 22, range: 260, cooldown: 1700, color: '#c9a66b', radius: 11, ranged: { speed: 6, life: 60, color: '#f1e3b0' } },
+  caster:  { name: 'Hexer', hp: 60, dmg: 17, speed: 0.8, xp: 38, range: 300, cooldown: 2300, color: '#9b4dca', radius: 12, effect: 'burn', ranged: { speed: 4.5, life: 80, color: '#ff8a3c' } },
+  spitter: { name: 'Säurespucker', hp: 70, dmg: 13, speed: 0.7, xp: 30, range: 240, cooldown: 2000, color: '#7bd05a', radius: 13, effect: 'poison', ranged: { speed: 4, life: 75, color: '#8fff6b' } },
+  raidboss: { name: 'Weltenfresser', hp: 1, dmg: 38, speed: 1.1, xp: 0, range: 58, cooldown: 1000, color: '#7d3cff', radius: 44 },
+  boss:   { name: 'Dungeon-Wächter', hp: 900, dmg: 22, speed: 1.0, xp: 400, range: 48, cooldown: 1100, color: '#c0392b', radius: 26 }
 };
 const MAX_MONSTERS_PER_TIER = 60;
 
@@ -1266,7 +1266,10 @@ const COSMETICS = {
     green:  { name: 'Grün', hex: '#5dff8a', price: 150 },
     violet: { name: 'Violett', hex: '#b48cff', price: 150 },
     pink:   { name: 'Pink', hex: '#ff7ad9', price: 150 },
-    white:  { name: 'Weiss', hex: '#f2f2f2', price: 150 }
+    white:  { name: 'Weiss', hex: '#f2f2f2', price: 150 },
+    orange: { name: 'Orange', hex: '#ff9f43', price: 150 },
+    cyan:   { name: 'Cyan', hex: '#3fd2ff', price: 150 },
+    silver: { name: 'Silber', hex: '#cfd6e6', price: 200 }
   },
   hat: {
     cap:     { name: 'Mütze', icon: '🧢', price: 200 },
@@ -1274,7 +1277,12 @@ const COSMETICS = {
     tophat:  { name: 'Zylinder', icon: '🎩', price: 300 },
     grad:    { name: 'Doktorhut', icon: '🎓', price: 300 },
     devil:   { name: 'Teufel', icon: '😈', price: 400 },
-    crown:   { name: 'Krone', icon: '👑', price: 600 }
+    crown:   { name: 'Krone', icon: '👑', price: 600 },
+    wizard:  { name: 'Zauberer', icon: '🧙', price: 350 },
+    vampire: { name: 'Vampir', icon: '🧛', price: 450 },
+    cowboy:  { name: 'Cowboy', icon: '🤠', price: 300 },
+    pumpkin: { name: 'Kürbis', icon: '🎃', price: 300 },
+    halo:    { name: 'Heiligenschein', icon: '😇', price: 250 }
   }
 };
 const PET_COST = 400;
@@ -1754,14 +1762,14 @@ function rangedAI(m, def, target, d, map) {
 
 // ---------------- Boss-Faehigkeiten ----------------
 const BOSS_SPECIALS = {
-  tier1: ['summon', 'enrage'],
-  tier2: ['rockfall', 'enrage'],
-  tier3: ['summon', 'fan'],
-  tier4: ['fan', 'rockfall'],
-  tier5: ['rockfall', 'fan', 'enrage'],
-  tier6: ['summon', 'fan', 'rockfall', 'enrage'],
-  bossroom: ['summon', 'fan', 'enrage'],
-  raid: ['summon', 'fan', 'rockfall', 'enrage']
+  tier1: ['summon', 'enrage', 'heal'],
+  tier2: ['rockfall', 'enrage', 'volley'],
+  tier3: ['summon', 'fan', 'volley'],
+  tier4: ['fan', 'rockfall', 'heal'],
+  tier5: ['rockfall', 'fan', 'enrage', 'volley'],
+  tier6: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
+  bossroom: ['summon', 'fan', 'enrage', 'volley'],
+  raid: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal']
 };
 const BOSS_FAN = {
   tier4: { effect: 'slow', color: '#9be8ff' },
@@ -1843,6 +1851,24 @@ function bossRockfall(m, def) {
     }
   }, 1400);
 }
+function bossVolley(m, def) {
+  const zone = m.zone || DEFAULT_TIER_KEY;
+  const cfg = BOSS_FAN[zone] || { effect: null, color: '#f1e3b0' };
+  const dmg = Math.round(def.dmg * (m.dmgMult || 1) * 0.6);
+  io.emit('bossCast', { x: m.x, y: m.y, zone, ms: 600 });
+  setTimeout(() => {
+    if (!monsters[m.id]) return;
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2, id = 'pr' + (projectileIdCounter++);
+      projectiles[id] = { id, hostile: true, ownerId: m.id, zone, x: m.x, y: m.y, vx: Math.cos(a) * 4.2, vy: Math.sin(a) * 4.2, dmg, effect: cfg.effect, color: cfg.color, life: 85 };
+    }
+  }, 600);
+}
+function bossHeal(m) {
+  if (m.hp >= m.maxHp * 0.6) return;
+  m.hp = Math.min(m.maxHp, m.hp + Math.round(m.maxHp * 0.15));
+  announceZone(m.zone || DEFAULT_TIER_KEY, `💚 ${m.name || 'Der Boss'} regeneriert!`);
+}
 function bossSpecial(m, def) {
   const zone = m.zone || DEFAULT_TIER_KEY;
   const list = BOSS_SPECIALS[zone] || ['summon'];
@@ -1863,6 +1889,8 @@ function bossSpecial(m, def) {
   if (act === 'summon') bossSummon(m);
   else if (act === 'fan' && target) bossFan(m, def, target);
   else if (act === 'rockfall') bossRockfall(m, def);
+  else if (act === 'volley') bossVolley(m, def);
+  else if (act === 'heal') bossHeal(m);
 }
 
 // ---------------- Gilden ----------------
@@ -2031,7 +2059,7 @@ io.on('connection', (socket) => {
         raidMap: RAID_ROWS,
         meta: META,
         defs: CLIENT_DEFS,
-        monsterDefs: Object.fromEntries(Object.entries(MONSTER_TYPES).map(([k, v]) => [k, { color: v.color, radius: v.radius, ranged: !!v.ranged }])),
+        monsterDefs: Object.fromEntries(Object.entries(MONSTER_TYPES).map(([k, v]) => [k, { name: v.name, color: v.color, radius: v.radius, ranged: !!v.ranged }])),
         arenaMap: ARENA_ROWS,
         bossRoomMap: BOSSROOM_ROWS,
         tile: TILE,
