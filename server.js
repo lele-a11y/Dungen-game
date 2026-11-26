@@ -394,7 +394,7 @@ const DUNGEON_TIER_DEFS = [
     pool: [['demon', 5], ['troll', 3], ['caster', 3], ['spitter', 2]],
     theme: { wall: '#3a2350', wallTop: '#251538', floorA: '#150d20', floorB: '#1a1128' } },
   { key: 'tier7', name: 'Obsidian-Thron', minLevel: 65, gen: { type: 'rooms', gridW: 16, gridH: 4, cellSize: 15 }, monsterMult: 11.5, dmgMult: 5.8, lootMult: 5.8,
-    pool: [['demon', 4], ['troll', 3], ['caster', 4], ['spitter', 3]],
+    pool: [['obsidianKnight', 3], ['voidStalker', 3], ['doomHerald', 3], ['demon', 2], ['caster', 2], ['spitter', 2]],
     theme: { wall: '#23232c', wallTop: '#121218', floorA: '#0c0c11', floorB: '#101017' } }
 ];
 const DUNGEON_TIERS = {};
@@ -548,6 +548,9 @@ const MONSTER_TYPES = {
   archer:  { name: 'Bogenschütze', hp: 45, dmg: 11, speed: 0.95, xp: 22, range: 260, cooldown: 1700, color: '#c9a66b', radius: 11, ranged: { speed: 6, life: 60, color: '#f1e3b0' } },
   caster:  { name: 'Hexer', hp: 60, dmg: 17, speed: 0.8, xp: 38, range: 300, cooldown: 2300, color: '#9b4dca', radius: 12, effect: 'burn', ranged: { speed: 4.5, life: 80, color: '#ff8a3c' } },
   spitter: { name: 'Säurespucker', hp: 70, dmg: 13, speed: 0.7, xp: 30, range: 240, cooldown: 2000, color: '#7bd05a', radius: 13, effect: 'poison', ranged: { speed: 4, life: 75, color: '#8fff6b' } },
+  obsidianKnight: { name: 'Obsidianritter', hp: 340, dmg: 46, speed: 1.0, xp: 170, range: 36, cooldown: 1100, color: '#3d3d52', radius: 17, effect: 'slow' },
+  voidStalker:   { name: 'Nichtshetzer', hp: 150, dmg: 30, speed: 1.9, xp: 120, range: 30, cooldown: 800, color: '#5a2a7a', radius: 12, effect: 'poison' },
+  doomHerald:    { name: 'Unheilbote', hp: 210, dmg: 38, speed: 0.9, xp: 155, range: 290, cooldown: 2100, color: '#8a1f1f', radius: 14, effect: 'burn', ranged: { speed: 5, life: 85, color: '#ff4d4d' } },
   raidboss: { name: 'Weltenfresser', hp: 1, dmg: 38, speed: 1.1, xp: 0, range: 58, cooldown: 1000, color: '#7d3cff', radius: 44 },
   boss:   { name: 'Dungeon-Wächter', hp: 900, dmg: 22, speed: 1.0, xp: 400, range: 48, cooldown: 1100, color: '#c0392b', radius: 26 }
 };
@@ -1205,7 +1208,7 @@ function useAbility(p) {
 }
 
 // ---------------- Quests ----------------
-const MONSTER_NAMES_PL = { goblin: 'Goblins', ork: 'Orks', slime: 'Schleime', bat: 'Fledermäuse', skeleton: 'Skelette', troll: 'Trolle', demon: 'Dämonen', archer: 'Bogenschützen', caster: 'Hexer', spitter: 'Säurespucker' };
+const MONSTER_NAMES_PL = { goblin: 'Goblins', ork: 'Orks', slime: 'Schleime', bat: 'Fledermäuse', skeleton: 'Skelette', troll: 'Trolle', demon: 'Dämonen', archer: 'Bogenschützen', caster: 'Hexer', spitter: 'Säurespucker', obsidianKnight: 'Obsidianritter', voidStalker: 'Nichtshetzer', doomHerald: 'Unheilboten' };
 const QUEST_TYPES = ['kill', 'killType', 'chest', 'gold', 'boss', 'pvp'];
 const QUEST_COUNT = 3;
 
