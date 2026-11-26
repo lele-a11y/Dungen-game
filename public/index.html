@@ -209,6 +209,12 @@
   #questHud { font-size:10px; color:#cfd6e6; margin-top:4px; max-width:230px; text-shadow:0 1px 2px #000; }
   #abilityTxt.ready { color:#8ee08e; }
   #mAbility { background:#2e3f5c99; font-size:20px; }
+  #mAbility2 { background:#4a2e5c99; font-size:20px; }
+  #ability2Txt.ready { color:#8ee08e; }
+  #raidBar { display:none; position:absolute; top:46px; left:50%; transform:translateX(-50%); z-index:12; width:min(360px,60vw); text-align:center; pointer-events:none; }
+  #raidBarTxt { font-size:12px; color:#e6d4ff; text-shadow:0 1px 3px #000; margin-bottom:3px; }
+  #raidBar .rbOuter { height:12px; background:#000a; border:1px solid #6b3fb0; border-radius:6px; overflow:hidden; }
+  #raidBarFill { height:100%; width:100%; background:linear-gradient(90deg,#7d3cff,#c77dff); }
   #tiersPanel {
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
     background: var(--panel); border:2px solid #2a2f3a; border-radius:14px;
@@ -382,7 +388,9 @@
       <span>🧪 <span id="potionTxt">0</span> (E)</span>
       <span>⚡ <span id="speedPotionTxt">0</span> (R)</span>
       <span id="abilityTxt"></span>
+      <span id="ability2Txt"></span>
       <span title="Essenz für Handwerk und Verbesserungen">✦ <span id="essenceTxt">0</span></span>
+      <span title="Schlüssel für Tresortüren">🔑 <span id="keysTxt">0</span></span>
     </div>
     <div id="eventBadges" style="display:flex; gap:6px; margin-top:2px;"></div>
     <div id="questHud"></div>
@@ -391,7 +399,7 @@
 
   <div id="chatBox"></div>
   <input id="chatInput" placeholder="Enter zum Chatten..." style="display:none;">
-  <div id="hint" style="display:none;">WASD/Pfeile: Bewegen&nbsp;·&nbsp;Klick/Leertaste: Angriff&nbsp;·&nbsp;E: Trank&nbsp;·&nbsp;R: Tempo-Trank&nbsp;·&nbsp;Q: Fähigkeit&nbsp;·&nbsp;C: Charakter&nbsp;·&nbsp;B: Shop&nbsp;·&nbsp;F: Truhe&nbsp;·&nbsp;Esc: Menü</div>
+  <div id="hint" style="display:none;">WASD/Pfeile: Bewegen&nbsp;·&nbsp;Klick/Leertaste: Angriff&nbsp;·&nbsp;E: Trank&nbsp;·&nbsp;R: Tempo-Trank&nbsp;·&nbsp;Q/T: Fähigkeiten&nbsp;·&nbsp;C: Charakter&nbsp;·&nbsp;B: Shop&nbsp;·&nbsp;F: Interagieren&nbsp;·&nbsp;Esc: Menü</div>
 
   <div id="orientHint">📱 Quer spielen ist bequemer</div>
   <button id="menuBtn">☰</button>
@@ -416,6 +424,8 @@
     <button class="menuOption" id="menuOptionSocial">👥 Soziales (Gruppe, Freunde)</button>
     <button class="menuOption" id="menuOptionQuests">📜 Quests</button>
     <button class="menuOption" id="menuOptionTiers">🗺️ Dungeon wählen</button>
+    <button class="menuOption" id="menuOptionTown">🏘️ Zur Stadt</button>
+    <button class="menuOption" id="menuOptionRaid">🐉 Raid &amp; Saison</button>
     <button class="menuOption" id="menuOptionBossroom">👑 Boss-Raum</button>
     <button class="menuOption" id="menuOptionPlayers">🧭 Zu Spieler teleportieren</button>
     <button class="menuOption" id="menuOptionAdmin" style="display:none;">👑 Admin-Panel</button>
@@ -465,6 +475,7 @@
     <button class="adminSingleBtn" id="adminTreasureBtn">💰 Schatzgoblin erscheinen lassen</button>
     <button class="adminSingleBtn" id="adminAmbushBtn">⚔️ Hinterhalt auslösen</button>
     <button class="adminSingleBtn" id="adminBlessBtn">✨ Segen auslösen</button>
+    <button class="adminSingleBtn" id="adminRaidBtn">🐉 Raid jetzt starten</button>
 
     <div class="adminRow">
       <label>Spieler (Kick / Sperren)</label>
@@ -541,9 +552,11 @@
       <div class="mBtn" id="mPotion">🧪</div>
       <div class="mBtn" id="mSpeed">⚡</div>
       <div class="mBtn" id="mAbility">✨</div>
+      <div class="mBtn" id="mAbility2">✨</div>
     </div>
   </div>
 
+  <div id="raidBar"><div id="raidBarTxt"></div><div class="rbOuter"><div id="raidBarFill"></div></div></div>
   <div id="hitFlash"></div>
   <div id="deathOverlay"><div>💀 Du bist gefallen...</div><div style="font-size:13px; margin-top:8px; color:#eee;">Respawn in Kürze</div></div>
 
@@ -602,6 +615,9 @@ let currentZone = 'dungeon';
 let nearestChestId = null;
 let isAdmin = false;
 let pendingTpaFromId = null;
+let TOWN = null, RAID_MAP = [], ABILITIES2 = {}, META = {};
+let serverOffset = 0, openDoors = new Set(), mySeason = null, lastSeasonLb = null, lastRaidResult = null;
+let nearInteract = null, interactLabel = '';
 
 const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 if (isTouchDevice) document.body.classList.add('touch-active');
@@ -661,6 +677,8 @@ document.getElementById('menuOptionTiers').addEventListener('click', () => { tog
 document.getElementById('menuOptionBossroom').addEventListener('click', () => { toggleMenu(false); toggleBossroomPanel(true); });
 document.getElementById('menuOptionPlayers').addEventListener('click', () => { toggleMenu(false); togglePlayersPanel(true); });
 document.getElementById('menuOptionAdmin').addEventListener('click', () => { toggleMenu(false); toggleAdminPanel(true); });
+document.getElementById('menuOptionTown').addEventListener('click', () => { toggleMenu(false); const m = world.players.find(q => q.id === myId); socket.emit(m && m.zone === 'town' ? 'leaveTown' : 'joinTown'); });
+document.getElementById('menuOptionRaid').addEventListener('click', () => { toggleMenu(false); openBig('raid', 'raid'); });
 document.getElementById('menuOptionLeave').addEventListener('click', () => {
   if (confirm('Spiel wirklich verlassen?')) {
     if (socket) socket.disconnect();
@@ -761,7 +779,9 @@ const MUSIC_THEMES = {
   tier5:    { root: 82.41,  scale: [0, 1, 4, 5, 7, 8, 11],   step: 950,  vol: 1.0,  drone: 'sawtooth', pulse: 1900 },
   tier6:    { root: 73.42,  scale: [0, 1, 3, 6, 7, 10],      step: 1400, vol: 0.95, drone: 'sawtooth', pulse: 0 },
   arena:    { root: 110.00, scale: [0, 3, 5, 7, 10],         step: 520,  vol: 1.0,  drone: 'square',   pulse: 1040 },
-  bossroom: { root: 65.41,  scale: [0, 1, 3, 6, 7],          step: 640,  vol: 1.0,  drone: 'sawtooth', pulse: 1280 }
+  bossroom: { root: 65.41,  scale: [0, 1, 3, 6, 7],          step: 640,  vol: 1.0,  drone: 'sawtooth', pulse: 1280 },
+  town:     { root: 196.00, scale: [0, 2, 4, 7, 9],          step: 1700, vol: 0.9,  drone: 'triangle', pulse: 0, bell: true },
+  raid:     { root: 55.00,  scale: [0, 1, 3, 6, 7, 10],      step: 520,  vol: 1.0,  drone: 'sawtooth', pulse: 1040 }
 };
 function noteFreq(theme, deg, oct) {
   const n = theme.scale.length;
@@ -848,10 +868,16 @@ const lastLb = {};
 let bigKind = null, bigTab = null;
 const RARITY_COLORS = ['#cfd6e6', '#5da9ff', '#b48cff', '#ffb347'];
 const SLOT_LABELS = { weapon: 'Waffe', armor: 'Rüstung', ring: 'Ring' };
+const ABILITY_TEXT = {
+  krieger: ['Wirbelschlag: 1,6-facher Schaden rundherum (8 s)', 'Bollwerk: 5 s halber Schaden, 15% Heilung (18 s)'],
+  magier: ['Feuernova: Ring aus 12 Geschossen (10 s)', 'Meteor: schlägt nach 0,9 s an der Zielstelle ein, 3,2-facher Schaden (16 s)'],
+  schurke: ['Schattenschritt: Sprung und sicherer Krit (7 s)', 'Klingentanz: 3 Schläge rundherum (14 s)']
+};
 const BIG = {
-  char: { title: '🎒 Charakter', tabs: [['equip', 'Ausrüstung'], ['skills', 'Fertigkeiten'], ['craft', 'Handwerk'], ['look', 'Aussehen']] },
+  char: { title: '🎒 Charakter', tabs: [['equip', 'Ausrüstung'], ['skills', 'Fertigkeiten'], ['craft', 'Handwerk'], ['look', 'Aussehen'], ['rebirth', 'Aufstieg']] },
   rank: { title: '🏆 Erfolge & Rangliste', tabs: [['ach', 'Erfolge'], ['level', 'Level'], ['kills', 'Kills'], ['boss', 'Bosse'], ['pvp', 'Arena']] }
 };
+BIG.raid = { title: '🐉 Raid & Saison', tabs: [['raid', 'Raid'], ['season', 'Saison']] };
 BIG.social = { title: '👥 Soziales', tabs: [['group', 'Gruppe'], ['friends', 'Freunde'], ['guild', 'Gilde']] };
 let myFriends = [];
 let myGuild = null;
@@ -989,9 +1015,44 @@ function bigBody() {
     h += `<div class="muted">Tägliche Anmeldung: Serie ${d.streak || 0} Tag(e). Je länger die Serie (bis 7), desto mehr Belohnung.</div><h3>Erfolge (${profile.achievements.length}/${DEFS.achievements.length})</h3>`;
     for (const a of DEFS.achievements) {
       const done = profile.achievements.includes(a.id);
-      const v = a.stat === 'level' ? (me.level || 0) : (profile.stats[a.stat] || 0);
+      const v = a.stat === 'level' ? (me.level || 0) : (a.stat === 'prestige' ? (me.prestige || 0) : (profile.stats[a.stat] || 0));
       h += `<div class="itemRow" style="border-left-color:${done ? '#8ee08e' : '#2a2f3a'}"><div><b>${done ? '✅ ' : ''}${a.name}</b><div class="meta">${a.desc} · ${done ? 'erledigt' : Math.min(v, a.thr) + '/' + a.thr} · Belohnung ${a.gold}🪙</div></div></div>`;
     }
+  } else if (key === 'char:rebirth') {
+    const pr = me.prestige || 0, M = META;
+    const inZone = me.zone === 'town' || !!DUNGEON_TIERS[me.zone];
+    const can = (me.level || 0) >= M.prestigeMin && pr < M.prestigeMax && inZone && !me.dead;
+    h += `<div class="muted">Wiedergeburt: Stufe <b style="color:#ffe9a8">${pr}/${M.prestigeMax}</b> · möglich ab Level ${M.prestigeMin} (du: ${me.level || 0})${inZone ? '' : ' · nur in der Stadt oder im Dungeon'}</div>`;
+    h += `<h3>⭐ Wiedergeburt</h3><div class="itemRow"><div><b>Neu beginnen, stärker werden</b><div class="meta">Level, Fertigkeitspunkte und Dungeon-Zugang starten wieder bei 1. Dauerhaft: +6% Leben und Schaden pro Stufe, +10% XP pro Stufe. Sofort: ${500 * (pr + 1)} Gold, 100 Essenz und eine legendäre Ausrüstung. Ausrüstung, Gold, Aussehen und Gilde bleiben.</div></div><div class="acts"><button data-act="prestige" data-arg="" ${can ? '' : 'disabled'}>Wiedergeboren werden</button></div></div>`;
+    h += `<h3>🔄 Klassenwechsel</h3><div class="muted">Kostet ${M.classChangeCost}🪙. Level, Ausrüstung und Fertigkeiten bleiben.</div>`;
+    for (const k in CLASSES) {
+      if (k === me.cls) continue;
+      h += `<div class="itemRow"><div><b>${CLASSES[k].name}</b><div class="meta">${ABILITY_TEXT[k] ? ABILITY_TEXT[k].join('<br>') : ''}</div></div><div class="acts"><button data-act="changeClass" data-arg="${k}" ${(me.gold || 0) >= M.classChangeCost && inZone ? '' : 'disabled'}>Wechseln</button></div></div>`;
+    }
+    h += '<h3>Deine Fähigkeiten</h3><div class="itemRow"><div class="meta">' + (ABILITY_TEXT[me.cls] ? '<b>Q</b> ' + ABILITY_TEXT[me.cls][0] + '<br><b>T</b> ' + ABILITY_TEXT[me.cls][1] : '') + '</div></div>';
+  } else if (key === 'raid:raid') {
+    const ev = world.events || {}, r = ev.raid, M = META, sNow = Date.now() + serverOffset;
+    if (r) {
+      const pct = Math.max(0, Math.round(r.hp / r.maxHp * 100)), left = Math.max(0, Math.round((r.endsAt - sNow) / 1000));
+      h += `<div class="itemRow" style="border-left-color:#b48cff"><div><b>🐉 Weltenfresser</b><div class="meta">Leben ${pct}% · noch ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · ${r.joined} Held(en) dabei</div></div><div class="acts">${me.zone === 'raid' ? '<button class="alt" data-act="leaveRaid" data-arg="">Raid verlassen</button>' : `<button data-act="joinRaid" data-arg="" ${(me.level || 0) >= M.raidMinLevel ? '' : 'disabled'}>Raid beitreten</button>`}</div></div>`;
+    } else {
+      const wait = Math.max(0, Math.ceil(((ev.raidNextAt || 0) - sNow) / 60000));
+      h += `<div class="itemRow"><div><b>🐉 Weltenfresser</b><div class="meta">Aktuell läuft kein Raid. Der nächste beginnt in etwa ${wait} Min.</div></div></div>`;
+    }
+    if (lastRaidResult) h += `<div class="itemRow" style="border-left-color:${lastRaidResult.win ? '#8ee08e' : '#ff8a8a'}"><div><b>Letzter Raid: ${lastRaidResult.win ? 'gewonnen (Platz ' + lastRaidResult.rank + ', ' + lastRaidResult.share + '% Schaden)' : 'verloren'}</b><div class="meta">+${lastRaidResult.gold} Gold · +${lastRaidResult.essence} Essenz · +${lastRaidResult.points} Saisonpunkte</div></div></div>`;
+    h += `<h3>So funktioniert der Raid</h3><p class="muted">Etwa alle 35 Minuten erscheint der Weltenfresser für 10 Minuten in einer eigenen Arena. Alle ab Level ${M.raidMinLevel} können beitreten, je mehr Helden, desto mehr Leben hat er. Die Beute richtet sich nach deinem Schadensanteil: Platz 1 bekommt meist Legendäres, die Top 3 Episches. Dazu gibt es Gold, Essenz, Schlüssel und Saisonpunkte. Du darfst höchstens ${M.raidMaxDeaths} Mal fallen. Achte auf die roten Warnkreise.</p>`;
+  } else if (key === 'raid:season') {
+    const pts = me.seasonPts != null ? me.seasonPts : (mySeason ? mySeason.points : 0);
+    const days = mySeason ? Math.max(0, Math.ceil((mySeason.endsAt - Date.now()) / 86400000)) : 0;
+    const tiers = META.seasonTiers || [];
+    let cur = null; for (const t of tiers) if (pts >= t.pts) cur = t;
+    const next = tiers.find(t => pts < t.pts);
+    h += `<div class="muted">Saison ${esc(mySeason ? mySeason.id : '')} · endet in ${days} Tag(en)</div><h3>Deine Punkte: ${pts}${cur ? ' · ' + cur.name : ''}</h3>`;
+    if (next) { const base = cur ? cur.pts : 0; h += `<div class="questRow"><div class="qBar"><div style="width:${Math.min(100, Math.round((pts - base) / (next.pts - base) * 100))}%"></div></div><div class="qMeta">Noch ${next.pts - pts} Punkte bis ${next.name}</div></div>`; }
+    h += tiers.map(t => `<div class="itemRow" style="border-left-color:${pts >= t.pts ? '#8ee08e' : '#2a2f3a'}"><div><b>${pts >= t.pts ? '✅ ' : ''}${t.name}</b> <span class="muted">ab ${t.pts} Punkten</span><div class="meta">${t.gold} Gold · ${t.essence} Essenz${t.item ? ' · Ausrüstung' : ''}${t.extra ? ' · legendäres Extra' : ''}</div></div></div>`).join('');
+    h += '<p class="muted">Punkte gibt es für Quests (8), Dungeon-Bosse (15), Tresore (6), Geheimräume (10), Arena-Siege (5) und besonders für den Raid. Am Monatsende bekommst du die Belohnung der erreichten Stufe, danach startet die Saison neu.</p>';
+    h += '<h3>Top 10 dieser Saison</h3>';
+    h += !lastSeasonLb ? '<p class="muted">Lade ...</p>' : (lastSeasonLb.rows.length ? lastSeasonLb.rows.map((r, i) => `<div class="itemRow"><div><b>${i + 1}. ${r.prestige ? '★' + r.prestige + ' ' : ''}${esc(r.name)}</b> <span class="muted">Level ${r.level}</span></div><div><b>${r.value}</b></div></div>`).join('') : '<p class="muted">Noch keine Einträge.</p>');
   } else if (key.startsWith('rank:')) {
     const rows = lastLb[bigTab];
     const label = { level: 'Level', kills: 'Kills', boss: 'Boss-Siege', pvp: 'Arena-Siege' }[bigTab];
@@ -1014,6 +1075,7 @@ function openBig(kind, tab) {
   document.getElementById('bigPanel').style.display = 'flex';
   if (kind === 'rank' && bigTab !== 'ach') socket.emit('leaderboard', { cat: bigTab });
   if (kind === 'social') { socket.emit('friendsList'); socket.emit('guildInfo'); }
+  if (kind === 'raid') { socket.emit('seasonInfo'); if (bigTab === 'season') socket.emit('seasonBoard'); }
   renderBig();
 }
 function closeBig() { bigKind = null; document.getElementById('bigPanel').style.display = 'none'; }
@@ -1026,6 +1088,7 @@ document.getElementById('bpTabs').addEventListener('click', (e) => {
   if (bigKind === 'rank' && bigTab !== 'ach') socket.emit('leaderboard', { cat: bigTab });
   if (bigKind === 'social' && bigTab === 'friends') socket.emit('friendsList');
   if (bigKind === 'social' && bigTab === 'guild') socket.emit('guildInfo');
+  if (bigKind === 'raid' && bigTab === 'season') { socket.emit('seasonInfo'); socket.emit('seasonBoard'); }
   renderBig();
 });
 const BIG_ACTIONS = {
@@ -1039,6 +1102,10 @@ const BIG_ACTIONS = {
   buyCos: (a) => { const [kind, id] = a.split(':'); socket.emit('buyCosmetic', { kind, id }); },
   setCos: (a) => { const [kind, id] = a.split(':'); socket.emit('setCosmetic', { kind, id: id || null }); },
   buyPet: () => socket.emit('buyPet'),
+  prestige: () => { if (confirm('Wirklich wiedergeboren werden? Level und Fertigkeiten starten bei 1. Ausrüstung, Gold, Aussehen und Gilde bleiben.')) socket.emit('prestige'); },
+  changeClass: (a) => { if (confirm('Klasse wechseln? Das kostet ' + META.classChangeCost + ' Gold.')) socket.emit('changeClass', { cls: a }); },
+  joinRaid: () => socket.emit('joinRaid'),
+  leaveRaid: () => socket.emit('leaveRaid'),
   guildCreate: () => {
     const n = document.getElementById('guildName'), t = document.getElementById('guildTag');
     if (n && t && n.value.trim()) socket.emit('guildCreate', { name: n.value.trim(), tag: t.value.trim() });
@@ -1070,6 +1137,7 @@ document.getElementById('bpBody').addEventListener('click', (e) => {
   const fn = BIG_ACTIONS[b.dataset.act];
   if (fn) fn(b.dataset.arg);
 });
+setInterval(() => { if (bigKind === 'raid') renderBig(); }, 1000);
 document.getElementById('menuOptionChar').addEventListener('click', () => { toggleMenu(false); openBig('char'); });
 document.getElementById('menuOptionRank').addEventListener('click', () => { toggleMenu(false); openBig('rank'); });
 document.getElementById('menuOptionSocial').addEventListener('click', () => { toggleMenu(false); openBig('social'); });
@@ -1170,6 +1238,8 @@ function togglePlayersPanel(force) {
   if (playersPanelOpen) renderPlayersPanel();
 }
 function zoneLabel(zone) {
+  if (zone === 'town') return '🏘️ Stadt';
+  if (zone === 'raid') return '🐉 Raid';
   if (zone === 'arena') return '⚔️ Arena';
   if (zone === 'bossroom') return '👑 Boss-Raum';
   const t = DUNGEON_TIERS[zone];
@@ -1266,6 +1336,7 @@ document.getElementById('adminTierBossBtn').addEventListener('click', () => sock
 document.getElementById('adminTreasureBtn').addEventListener('click', () => socket.emit('adminEvent', { kind: 'treasure' }));
 document.getElementById('adminAmbushBtn').addEventListener('click', () => socket.emit('adminEvent', { kind: 'ambush' }));
 document.getElementById('adminBlessBtn').addEventListener('click', () => socket.emit('adminEvent', { kind: 'blessing' }));
+document.getElementById('adminRaidBtn').addEventListener('click', () => socket.emit('adminEvent', { kind: 'raid' }));
 
 // ---------------- Startscreen ----------------
 let authMode = 'login';
@@ -1313,6 +1384,7 @@ function startGame() {
   });
   socket.on('init', (data) => {
     myId = data.you; DUNGEON_TIERS = data.dungeonTiers || {}; MONSTER_DEFS = data.monsterDefs || {}; ABILITIES = data.abilities || {}; DEFS = data.defs || {}; ARENA_MAP = data.arenaMap; BOSSROOM_MAP = data.bossRoomMap; TILE = data.tile; CLASSES = data.classes;
+    TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {};
     isAdmin = !!data.isAdmin;
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'flex';
@@ -1333,6 +1405,8 @@ function startGame() {
     const have = new Set(s.players.map(q => q.id));
     s.players = s.players.concat(rosterCache.filter(r => !have.has(r.id)));
     world = s;
+    if (s.now) { const off = s.now - Date.now(); serverOffset = serverOffset ? serverOffset * 0.9 + off * 0.1 : off; }
+    openDoors = new Set(s.doors || []);
     const meNew = s.players.find(pl => pl.id === myId);
     if (meNew) {
       if (lastOwnHp !== null && meNew.hp < lastOwnHp) triggerHitFlash();
@@ -1390,6 +1464,15 @@ function startGame() {
   socket.on('kicked', (msg) => { alert(msg); location.reload(); });
   socket.on('leaderboard', (r) => { lastLb[r.cat] = r.rows; if (bigKind === 'rank') renderBig(); });
   socket.on('notice', (t) => pushToast(t));
+  socket.on('season', (r) => { mySeason = r; if (bigKind === 'raid') renderBig(); });
+  socket.on('seasonBoard', (r) => { lastSeasonLb = r; if (bigKind === 'raid') renderBig(); });
+  socket.on('seasonEnd', (r) => pushToast('🏅 Saison ' + r.id + ' beendet: ' + r.tier + ' (' + r.points + ' Punkte) · +' + r.gold + ' Gold, +' + r.essence + ' Essenz', 9000));
+  socket.on('raidResult', (r) => {
+    lastRaidResult = r;
+    pushToast(r.win ? '🏆 Raid gewonnen! Platz ' + r.rank + ' (' + r.share + '% Schaden): +' + r.gold + ' Gold, +' + r.essence + ' Essenz, +' + r.points + ' Saisonpunkte' : '🐉 Raid verloren. Trostpreis: +' + r.gold + ' Gold', 9000);
+    if (bigKind === 'raid') renderBig();
+  });
+  socket.on('trapHit', () => { sfx('hurt', 150); startShake(2.5, 150); });
   socket.on('loot', (r) => {
     const rn = DEFS.rarities ? DEFS.rarities[r.rarity].name : '';
     sfx('loot', 80);
@@ -1410,7 +1493,7 @@ function startGame() {
     clearTimeout(toast._t);
     toast._t = setTimeout(() => { toast.style.display = 'none'; }, 4000);
   });
-  socket.on('abilityFx', (f) => { abilityFx.push({ ...f, at: Date.now(), ms: 560 }); if (f.zone === currentZone) sfx('ability', 100); });
+  socket.on('abilityFx', (f) => { abilityFx.push({ ...f, at: Date.now(), ms: f.ms || 560 }); if (f.zone === currentZone) sfx('ability', 100); });
 
   socket.on('tpaIncoming', (r) => {
     pendingTpaFromId = r.fromId;
@@ -1448,9 +1531,10 @@ function bindInput() {
     if (e.key.toLowerCase() === 'e') socket.emit('useItem');
     if (e.key.toLowerCase() === 'r') socket.emit('useSpeedPotion');
     if (e.key.toLowerCase() === 'q') socket.emit('ability');
+    if (e.key.toLowerCase() === 't') socket.emit('ability2');
     if (e.key.toLowerCase() === 'c') toggleBig('char');
     if (e.key.toLowerCase() === 'b') toggleShop();
-    if (e.key.toLowerCase() === 'f') tryOpenNearestChest();
+    if (e.key.toLowerCase() === 'f') interactNearest();
     if (e.key === 'Escape') { if (bigKind) closeBig(); else toggleMenu(); }
     sendInput();
   });
@@ -1475,7 +1559,7 @@ function bindInput() {
     }
   });
 
-  document.getElementById('interactBtn').addEventListener('click', tryOpenNearestChest);
+  document.getElementById('interactBtn').addEventListener('click', interactNearest);
 
   // ---------------- Mobile: schwebender Joystick (linke Bildschirmhaelfte) ----------------
   const joyZone = document.getElementById('joyZone');
@@ -1555,6 +1639,7 @@ function bindInput() {
   mPotion.addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('useItem'); }, { passive: false });
   mSpeed.addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('useSpeedPotion'); }, { passive: false });
   document.getElementById('mAbility').addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('ability'); }, { passive: false });
+  document.getElementById('mAbility2').addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('ability2'); }, { passive: false });
 }
 
 function sendChatText(ct) {
@@ -1575,9 +1660,18 @@ document.getElementById('menuOptionFull').addEventListener('click', () => {
 });
 document.getElementById('orientHint').addEventListener('click', () => { document.getElementById('orientHint').style.display = 'none'; });
 
-function tryOpenNearestChest() {
-  if (!socket || !nearestChestId) return;
-  socket.emit('openChest', { chestId: nearestChestId });
+function interactNearest() {
+  if (!socket || !nearInteract) return;
+  if (nearInteract.type === 'chest') socket.emit('openChest', { chestId: nearestChestId });
+  else if (nearInteract.type === 'door') socket.emit('openDoor');
+  else if (nearInteract.type === 'npc') openNpc(nearInteract.npc.panel);
+}
+function openNpc(panel) {
+  if (panel === 'shop') toggleShop(true);
+  else if (panel === 'quests') toggleQuestsPanel(true);
+  else if (panel === 'smith') openBig('char', 'equip');
+  else if (panel === 'raid') openBig('raid', 'raid');
+  else if (panel === 'rebirth') openBig('char', 'rebirth');
 }
 
 function sendInput() {
@@ -1697,6 +1791,7 @@ function drawHero(p, sx, sy, s, t) {
   const by = sy + (moving ? Math.sin(t / 85) * 0.7 : Math.sin(t / 520) * 0.3) - 1;
   const fx = s.fx, fy = s.fy, ox = -fy, oy = fx;
   drawShadow(sx, sy + 11, 11, 4.5);
+  if (p.guardUntil && p.guardUntil > Date.now() + serverOffset) { glow(sx, sy, 30, 'rgba(100,170,255,0.3)'); ctx.strokeStyle = 'rgba(130,190,255,0.85)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(sx, by, 20, 0, TAU); ctx.stroke(); }
   ctx.lineCap = 'round';
   if (p.cls === 'krieger') {
     ctx.fillStyle = '#8f98a8'; ctx.strokeStyle = '#262a34'; ctx.lineWidth = 2;
@@ -1733,7 +1828,7 @@ function drawHero(p, sx, sy, s, t) {
     ctx.fillStyle = '#1b1e26'; ctx.beginPath(); ctx.arc(ex + fx * 0.8, ey + fy * 0.8, 1.2, 0, TAU); ctx.fill();
   }
   if (p.hat) { ctx.font = '16px Verdana'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(p.hat, sx, by - 12); ctx.textBaseline = 'alphabetic'; }
-  outlinedText((p.tag ? '[' + p.tag + '] ' : '') + p.name + '  Lv' + p.level, sx, by - (p.hat ? 26 : 17), p.id === myId ? '#ffe9a8' : '#ffffff', 'bold 11px Verdana');
+  outlinedText((p.prestige ? '★' + p.prestige + ' ' : '') + (p.tag ? '[' + p.tag + '] ' : '') + p.name + '  Lv' + p.level, sx, by - (p.hat ? 26 : 17), p.id === myId ? '#ffe9a8' : '#ffffff', 'bold 11px Verdana');
   hpBar(sx - 16, by + 15, 32, 4, p.hp / p.maxHp);
 }
 
@@ -1766,9 +1861,10 @@ function drawWolf(px, py, s, t) {
 // ----- Monster -----
 function drawMonster(m, sx, sy, s, t, meSx, meSy) {
   const md = MONSTER_DEFS[m.type] || {};
-  const isBoss = m.type === 'boss';
-  const r = isBoss ? 30 : (md.radius || 11);
-  const col = isBoss ? '#c0392b' : (md.color || '#8f9c4a');
+  const isRaid = m.type === 'raidboss';
+  const isBoss = m.type === 'boss' || isRaid;
+  const r = isRaid ? 44 : (isBoss ? 30 : (md.radius || 11));
+  const col = isRaid ? '#7d3cff' : (isBoss ? '#c0392b' : (md.color || '#8f9c4a'));
   let fx = s.fx, fy = s.fy;
   if (s.mv < 0.2) {
     const dx = meSx - sx, dy = meSy - sy, d = Math.hypot(dx, dy);
@@ -1858,6 +1954,20 @@ function drawMonster(m, sx, sy, s, t, meSx, meSy) {
       body(r, '#fff0a0', '#c99a1c'); eyes(r * 0.4, r * 0.35, 2, '#fff');
       for (let i = 0; i < 3; i++) { const a = t / 300 + i * 2.1 + ph, rr = r + 6 + Math.sin(t / 170 + i) * 3; ctx.fillStyle = 'rgba(255,255,220,' + (0.5 + 0.4 * Math.sin(t / 130 + i)) + ')'; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * rr, by + Math.sin(a) * rr, 1.8, 0, TAU); ctx.fill(); }
       break;
+    case 'raidboss': {
+      const pulse = 0.5 + 0.5 * Math.sin(t / (m.enraged ? 100 : 240));
+      glow(sx, by, r * 3 + pulse * 10, 'rgba(150,70,255,' + (0.3 + pulse * 0.15) + ')');
+      for (let i = 0; i < 10; i++) {
+        const a = i / 10 * TAU - t / 2500, wob = Math.sin(t / 300 + i) * 5, c1 = Math.cos(a), s1 = Math.sin(a);
+        ctx.strokeStyle = '#3d1b7a'; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.beginPath();
+        ctx.moveTo(sx + c1 * r * 0.7, by + s1 * r * 0.7);
+        ctx.quadraticCurveTo(sx + c1 * r * 1.3 - s1 * wob, by + s1 * r * 1.3 + c1 * wob, sx + c1 * r * 1.75, by + s1 * r * 1.75); ctx.stroke();
+      }
+      body(r, '#a066ff', '#2b0f55');
+      for (const sd of [-1, 1]) { ctx.fillStyle = '#ffe34d'; ctx.beginPath(); ctx.ellipse(sx + fx * r * 0.4 + ox * r * 0.35 * sd, by + fy * r * 0.4 + oy * r * 0.35 * sd, 6, 3, Math.atan2(fy, fx), 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#12051f'; ctx.beginPath(); ctx.ellipse(sx + fx * r * 0.62, by + fy * r * 0.62, r * 0.28, r * 0.16, Math.atan2(fy, fx), 0, TAU); ctx.fill();
+      break;
+    }
     case 'boss': {
       const pulse = 0.5 + 0.5 * Math.sin(t / (m.enraged ? 110 : 260));
       glow(sx, by, r * (m.enraged ? 3.1 : 2.4) + pulse * 6, 'rgba(255,' + (m.enraged ? 30 : 70) + ',40,' + (0.28 + pulse * 0.12 + (m.enraged ? 0.14 : 0)) + ')');
@@ -1873,7 +1983,7 @@ function drawMonster(m, sx, sy, s, t, meSx, meSy) {
   const barY = by - r - (isBoss ? 9 : 7);
   if (isBoss) {
     hpBar(sx - 40, barY, 80, 6, m.hp / m.maxHp);
-    outlinedText('👑 ' + (m.name || 'Boss'), sx, barY - 5, '#ffd766', 'bold 13px Verdana');
+    outlinedText((isRaid ? '🐉 ' : '👑 ') + (m.name || 'Boss'), sx, barY - 5, isRaid ? '#d9b8ff' : '#ffd766', 'bold 13px Verdana');
   } else {
     if (m.hp < m.maxHp) hpBar(sx - r * 1.2, barY, r * 2.4, 4, m.hp / m.maxHp);
     if (m.type === 'treasure') outlinedText('💰 Schatzgoblin', sx, barY - 4, '#ffd700', 'bold 11px Verdana');
@@ -1900,7 +2010,7 @@ function drawLoot(it, sx, sy, t) {
     ctx.fillStyle = 'rgba(255,255,255,0.65)'; ctx.beginPath(); ctx.arc(sx - 2, sy - 3 + bob, 1.6, 0, TAU); ctx.fill();
   }
 }
-function drawChestSprite(c, sx, sy, near, t) {
+function drawChestSpriteBase(c, sx, sy, near, t) {
   drawShadow(sx, sy + 10, 13, 4);
   if (!c.looted && gfxHigh) glow(sx, sy, near ? 34 : 24, near ? 'rgba(255,220,120,0.5)' : 'rgba(255,220,120,0.22)');
   ctx.lineWidth = 2; ctx.strokeStyle = '#2a1708';
@@ -1913,6 +2023,72 @@ function drawChestSprite(c, sx, sy, near, t) {
     ctx.fillStyle = '#c99a1c'; ctx.fillRect(sx - 2.5, sy - 5, 5, 7);
     ctx.fillStyle = 'rgba(255,255,255,' + (0.25 + 0.2 * Math.sin(t / 260 + sx)) + ')'; ctx.fillRect(sx - 9, sy - 3, 3, 8);
   }
+}
+
+// ----- Neue Welt-Elemente: Stadt, Fallen, Tresortueren, Raum-Truhen -----
+function zoneRows(zone) {
+  if (zone === 'arena') return ARENA_MAP;
+  if (zone === 'bossroom') return BOSSROOM_MAP;
+  if (zone === 'town') return TOWN ? TOWN.rows : null;
+  if (zone === 'raid') return RAID_MAP;
+  const t = DUNGEON_TIERS[zone];
+  return t ? t.rows : null;
+}
+const ZONE_THEMES = {
+  town: { wall: '#5b4a36', wallTop: '#3d3022', floorA: '#2a3a26', floorB: '#2f4129' },
+  raid: { wall: '#3b2457', wallTop: '#241338', floorA: '#160c24', floorB: '#1b102c' }
+};
+const TOWN_DECOR = [['🏪', 8, 3], ['⚒️', 31, 3], ['📜', 8, 20], ['🐉', 31, 20], ['⛲', 19.5, 11.5]];
+const NPC_COLORS = { shop: '#d9a441', smith: '#9aa4b5', quests: '#5ea0e0', herald: '#c06af0', rebirth: '#f0d060' };
+function drawNpc(n, sx, sy, t) {
+  const bob = Math.sin(t / 400 + n.x) * 1.5, col = NPC_COLORS[n.id] || '#cccccc';
+  drawShadow(sx, sy + 12, 12, 5);
+  glow(sx, sy, 34, 'rgba(255,230,150,0.18)');
+  const g = ctx.createRadialGradient(sx - 4, sy - 8 + bob, 2, sx, sy + bob, 15);
+  g.addColorStop(0, shade(col, 50)); g.addColorStop(1, shade(col, -35));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy + bob, 13, 0, TAU); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(sx - 4, sy - 2 + bob, 2.2, 0, TAU); ctx.arc(sx + 4, sy - 2 + bob, 2.2, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(sx - 4, sy - 1.5 + bob, 1.1, 0, TAU); ctx.arc(sx + 4, sy - 1.5 + bob, 1.1, 0, TAU); ctx.fill();
+  ctx.font = '20px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+  ctx.fillText(n.icon, sx, sy - 26 + bob);
+  ctx.textBaseline = 'alphabetic';
+  outlinedText(n.name, sx, sy - 40, '#ffe9a8', 'bold 11px Verdana');
+}
+const TRAP_SPOTS = [[8, 8], [24, 8], [8, 24], [24, 24], [16, 16]];
+function drawTrap(sx, sy, t, T) {
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
+  ctx.fillStyle = '#5a5a63';
+  for (const [hx, hy] of TRAP_SPOTS) { ctx.beginPath(); ctx.arc(sx + hx, sy + hy, 2.2, 0, TAU); ctx.fill(); }
+  if (t >= T.activeFrom) {
+    ctx.fillStyle = '#d9dde6';
+    for (const [hx, hy] of TRAP_SPOTS) { ctx.beginPath(); ctx.moveTo(sx + hx - 3, sy + hy + 4); ctx.lineTo(sx + hx, sy + hy - 8); ctx.lineTo(sx + hx + 3, sy + hy + 4); ctx.closePath(); ctx.fill(); }
+    ctx.strokeStyle = 'rgba(255,80,60,0.8)'; ctx.lineWidth = 2; ctx.strokeRect(sx + 1, sy + 1, TILE - 2, TILE - 2);
+  } else if (t >= T.warnFrom) {
+    ctx.fillStyle = Math.floor(t / 90) % 2 ? 'rgba(255,70,50,0.38)' : 'rgba(255,200,80,0.18)'; ctx.fillRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
+    ctx.fillStyle = '#9a9aa6';
+    for (const [hx, hy] of TRAP_SPOTS) { ctx.beginPath(); ctx.moveTo(sx + hx - 2, sy + hy + 3); ctx.lineTo(sx + hx, sy + hy - 2); ctx.lineTo(sx + hx + 2, sy + hy + 3); ctx.closePath(); ctx.fill(); }
+  }
+}
+function drawVaultDoor(sx, sy, t) {
+  ctx.fillStyle = '#6b4a1f'; ctx.fillRect(sx + 3, sy + 2, TILE - 6, TILE - 3);
+  ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 2; ctx.strokeRect(sx + 3, sy + 2, TILE - 6, TILE - 3);
+  ctx.fillStyle = '#d9a441'; ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + 14, 4, 0, TAU); ctx.fill(); ctx.fillRect(sx + TILE / 2 - 1.5, sy + 14, 3, 8);
+  glow(sx + TILE / 2, sy + TILE / 2, 26, 'rgba(255,200,90,' + (0.18 + 0.08 * Math.sin(t / 300)) + ')');
+}
+function drawCracks(sx, sy) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1.5; ctx.beginPath();
+  ctx.moveTo(sx + 6, sy + 5); ctx.lineTo(sx + 14, sy + 14); ctx.lineTo(sx + 11, sy + 20); ctx.lineTo(sx + 22, sy + 28);
+  ctx.moveTo(sx + 14, sy + 14); ctx.lineTo(sx + 25, sy + 10); ctx.stroke();
+}
+function drawChestSprite(c, sx, sy, near, t) {
+  drawChestSpriteBase(c, sx, sy, near, t);
+  if (c.looted || (c.kind !== 'vault' && c.kind !== 'secret')) return;
+  const vault = c.kind === 'vault';
+  glow(sx, sy, near ? 40 : 30, vault ? 'rgba(120,180,255,0.35)' : 'rgba(255,150,255,0.3)');
+  ctx.font = '12px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+  ctx.fillText(vault ? '💎' : '✨', sx, sy - 18 + Math.sin(t / 300) * 2);
+  ctx.textBaseline = 'alphabetic';
 }
 
 // ----- Welt -----
@@ -1931,12 +2107,12 @@ function ensureVignette() {
 function updateZoneUi(me) {
   if (!me) return;
   const tierInfo = DUNGEON_TIERS[me.zone];
-  const txt = me.zone === 'arena' ? '⚔️ PvP-Arena' : (me.zone === 'bossroom' ? '👑 Boss-Raum' : (tierInfo ? '🏰 ' + tierInfo.name : '🏰 Dungeon'));
+  const txt = me.zone === 'town' ? '🏘️ Stadt' : me.zone === 'raid' ? '🐉 Raid: Weltenfresser' : me.zone === 'arena' ? '⚔️ PvP-Arena' : (me.zone === 'bossroom' ? '👑 Boss-Raum' : (tierInfo ? '🏰 ' + tierInfo.name : '🏰 Dungeon'));
   if (txt === zoneLabelText) return;
   zoneLabelText = txt;
   const el = document.getElementById('zoneLabel');
   el.textContent = txt;
-  el.className = me.zone === 'arena' ? 'arena' : (me.zone === 'bossroom' ? 'bossroom' : 'dungeon');
+  el.className = me.zone === 'arena' ? 'arena' : (me.zone === 'bossroom' || me.zone === 'raid' ? 'bossroom' : 'dungeon');
 }
 function syncEffects(s, me) {
   // Partikel, wenn Gegner verschwinden (besiegt) oder Beute aufgesammelt wird
@@ -1947,7 +2123,7 @@ function syncEffects(s, me) {
     if (curM.has(id) || pm.zone !== me.zone) continue;
     if (dist(pm.x, pm.y, me.x, me.y) < 700) {
       const md = MONSTER_DEFS[pm.type] || {};
-      const isBoss = pm.type === 'boss';
+      const isBoss = pm.type === 'boss' || pm.type === 'raidboss';
       spawnParticles(pm.x, pm.y, isBoss ? '#ff6a3c' : (md.color || '#c8c8c8'), isBoss ? 40 : 9, isBoss ? 5 : 2.6, isBoss ? 1.1 : 0.55, isBoss ? 4 : 2.6);
       if (isBoss) startShake(5, 400);
     }
@@ -1975,7 +2151,7 @@ function render() {
 
   currentZone = me.zone || Object.keys(DUNGEON_TIERS)[0];
   const tierInfo = DUNGEON_TIERS[currentZone];
-  const activeMap = currentZone === 'arena' ? ARENA_MAP : (currentZone === 'bossroom' ? BOSSROOM_MAP : (tierInfo ? tierInfo.rows : null));
+  const activeMap = zoneRows(currentZone);
   if (!activeMap || !activeMap.length) return;
   const isDungeonTierZone = !!tierInfo;
   updateZoneUi(me);
@@ -1988,6 +2164,7 @@ function render() {
   const meSx = meS.x - camX, meSy = meS.y - camY;
 
   const colors = (tierInfo && tierInfo.theme) ? tierInfo.theme
+    : ZONE_THEMES[currentZone] ? ZONE_THEMES[currentZone]
     : (currentZone === 'arena' ? { wall: '#3a2b2b', wallTop: '#271c1c', floorA: '#211616', floorB: '#251a1a' }
     : (currentZone === 'bossroom' ? { wall: '#4a2230', wallTop: '#341520', floorA: '#1c0f14', floorB: '#22121a' }
     : { wall: '#2b2f3a', wallTop: '#1c1f27', floorA: '#141821', floorB: '#181c26' }));
@@ -1998,11 +2175,12 @@ function render() {
   const endCol = Math.min(W, Math.ceil((camX + canvas.width) / TILE));
   const startRow = Math.max(0, Math.floor(camY / TILE));
   const endRow = Math.min(H, Math.ceil((camY + canvas.height) / TILE));
-  const isW = (x, y) => x < 0 || y < 0 || x >= W || y >= H || activeMap[y][x] === '1';
+  const isW = (x, y) => { if (x < 0 || y < 0 || x >= W || y >= H) return true; const c = activeMap[y][x]; return c === '1' || ((c === '2' || c === '3') && !openDoors.has(x + ',' + y)); };
   for (let y = startRow; y < endRow; y++) {
     for (let x = startCol; x < endCol; x++) {
       const sx = Math.round(x * TILE - camX), sy = Math.round(y * TILE - camY);
-      if (activeMap[y][x] === '1') {
+      const ch = activeMap[y][x], isDoorTile = ch === '2' || ch === '3', doorOpen = isDoorTile && openDoors.has(x + ',' + y);
+      if (ch === '1' || (isDoorTile && !doorOpen)) {
         ctx.fillStyle = colors.wall;
         ctx.fillRect(sx, sy, TILE, TILE);
         if (gfxHigh) {
@@ -2025,11 +2203,28 @@ function render() {
           if (isW(x + 1, y)) { ctx.fillStyle = 'rgba(0,0,0,0.14)'; ctx.fillRect(sx + TILE - 4, sy, 4, TILE); }
         }
       }
+      if (ch === '2' && !doorOpen) drawVaultDoor(sx, sy, now);
+      else if (ch === '3' && !doorOpen && dist(me.x, me.y, x * TILE + TILE / 2, y * TILE + TILE / 2) < 150) drawCracks(sx, sy);
     }
+  }
+
+  // ---- Fallen und Stadt-Dekoration (am Boden) ----
+  if (isDungeonTierZone && tierInfo.traps) {
+    const TT = META.trap || { cycle: 3200, warnFrom: 1800, activeFrom: 2400 }, sNow = now + serverOffset;
+    for (const tr of tierInfo.traps) {
+      if (tr.x < startCol || tr.x >= endCol || tr.y < startRow || tr.y >= endRow) continue;
+      drawTrap(Math.round(tr.x * TILE - camX), Math.round(tr.y * TILE - camY), (sNow + tr.ph) % TT.cycle, TT);
+    }
+  }
+  if (currentZone === 'town') {
+    ctx.font = '30px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+    for (const [e, tx, ty] of TOWN_DECOR) ctx.fillText(e, tx * TILE + TILE / 2 - camX, ty * TILE + TILE / 2 - camY);
+    ctx.textBaseline = 'alphabetic';
   }
 
   // ---- Zeichenliste (nach Tiefe sortiert) ----
   const list = [];
+  if (currentZone === 'town' && TOWN) for (const n of TOWN.npcs) { const nsx = n.x - camX, nsy = n.y - camY; list.push({ y: nsy, fn: () => drawNpc(n, nsx, nsy, now) }); }
   for (const it of world.items) {
     if (it.zone !== currentZone) continue;
     const sx = it.x - camX, sy = it.y - camY;
@@ -2047,10 +2242,25 @@ function render() {
     }
   }
   nearestChestId = nearId;
-  const showInteract = !!nearId;
-  if (showInteract !== interactShown) { document.getElementById('interactBtn').style.display = showInteract ? 'block' : 'none'; interactShown = showInteract; }
+  nearInteract = null;
+  if (nearId) nearInteract = { type: 'chest', label: '📦 Truhe öffnen (F)' };
+  if (!nearInteract && currentZone === 'town' && TOWN) {
+    for (const n of TOWN.npcs) if (dist(me.x, me.y, n.x, n.y) < 60) { nearInteract = { type: 'npc', npc: n, label: n.icon + ' ' + n.name + ' (F)' }; break; }
+  }
+  if (!nearInteract && isDungeonTierZone) {
+    const tx0 = Math.floor(me.x / TILE), ty0 = Math.floor(me.y / TILE);
+    for (let ddy = -1; ddy <= 1 && !nearInteract; ddy++) for (let ddx = -1; ddx <= 1; ddx++) {
+      const tx = tx0 + ddx, ty = ty0 + ddy;
+      if (ty < 0 || ty >= activeMap.length || tx < 0 || tx >= activeMap[0].length) continue;
+      if (activeMap[ty][tx] !== '2' || openDoors.has(tx + ',' + ty)) continue;
+      if (dist(me.x, me.y, tx * TILE + TILE / 2, ty * TILE + TILE / 2) > 56) continue;
+      nearInteract = { type: 'door', label: me.keys > 0 ? '🔑 Tür öffnen (F)' : '🔒 Schlüssel nötig' }; break;
+    }
+  }
+  const ilabel = nearInteract ? nearInteract.label : '';
+  if (ilabel !== interactLabel) { const ib = document.getElementById('interactBtn'); ib.style.display = ilabel ? 'block' : 'none'; if (ilabel) ib.textContent = ilabel; interactLabel = ilabel; }
 
-  if (isDungeonTierZone || currentZone === 'bossroom') {
+  if (isDungeonTierZone || currentZone === 'bossroom' || currentZone === 'raid') {
     for (const m of world.monsters) {
       if (m.zone !== currentZone) continue;
       const s = smoothPos('m' + m.id, m.x, m.y, k);
@@ -2120,17 +2330,30 @@ function render() {
   for (let i = abilityFx.length - 1; i >= 0; i--) {
     const f = abilityFx[i];
     const t = (now - f.at) / f.ms;
-    if (t >= 1) { abilityFx.splice(i, 1); continue; }
+    if (t >= 1) {
+      if (f.type === 'meteor' && f.zone === currentZone) { spawnParticles(f.x, f.y, '#ffb36b', 26, 5.5, 0.8, 3.4); if (dist(me.x, me.y, f.x, f.y) < 500) startShake(5, 300); }
+      abilityFx.splice(i, 1); continue;
+    }
     if (f.zone !== currentZone) continue;
     ctx.save();
     ctx.globalAlpha = Math.max(0, 1 - t);
     if (f.type === 'dash') {
       ctx.strokeStyle = '#b48cff'; ctx.lineWidth = 8; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(f.x - camX, f.y - camY); ctx.lineTo(f.x2 - camX, f.y2 - camY); ctx.stroke();
+    } else if (f.type === 'meteor') {
+      ctx.globalAlpha = 1;
+      const mx = f.x - camX, my = f.y - camY;
+      ctx.fillStyle = 'rgba(255,70,40,' + (0.12 + 0.25 * t) + ')'; ctx.beginPath(); ctx.arc(mx, my, f.r, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,120,60,0.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(mx, my, f.r, 0, TAU); ctx.stroke();
+      const fall = (1 - t) * (1 - t) * 300;
+      glow(mx, my - fall, 34, 'rgba(255,150,60,0.7)');
+      ctx.fillStyle = '#ffcf7a'; ctx.beginPath(); ctx.arc(mx, my - fall, 11, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#ff6a3c'; ctx.beginPath(); ctx.arc(mx, my - fall, 7, 0, TAU); ctx.fill();
     } else {
       const rr = Math.max(1, f.r * t);
-      glow(f.x - camX, f.y - camY, rr, f.type === 'nova' ? 'rgba(255,150,60,0.25)' : 'rgba(255,230,140,0.2)');
-      ctx.strokeStyle = f.type === 'nova' ? '#ff9a3c' : '#ffe08a'; ctx.lineWidth = 5;
+      const pal = { nova: ['rgba(255,150,60,0.25)', '#ff9a3c'], guard: ['rgba(100,170,255,0.25)', '#6fb7ff'], blades: ['rgba(190,140,255,0.25)', '#c9a0ff'] }[f.type] || ['rgba(255,230,140,0.2)', '#ffe08a'];
+      glow(f.x - camX, f.y - camY, rr, pal[0]);
+      ctx.strokeStyle = pal[1]; ctx.lineWidth = 5;
       ctx.beginPath(); ctx.arc(f.x - camX, f.y - camY, rr, 0, TAU); ctx.stroke();
     }
     ctx.restore();
@@ -2207,7 +2430,7 @@ function drawMinimap(me, rows, zone) {
   };
   for (const m of world.monsters) {
     if (m.zone !== zone) continue;
-    if (m.type === 'boss') dot(m.x, m.y, 4, '#ff4d4d');
+    if (m.type === 'boss' || m.type === 'raidboss') dot(m.x, m.y, m.type === 'raidboss' ? 6 : 4, '#ff4d4d');
     else if (m.type === 'treasure') dot(m.x, m.y, 3, '#ffd700');
   }
   for (const p of world.players) if (p.id !== myId && p.zone === zone && !p.dead) dot(p.x, p.y, 2.5, '#6fd1ff');
@@ -2254,6 +2477,25 @@ function updateHud(me) {
     at.className = left > 0 ? '' : 'ready';
     document.getElementById('mAbility').textContent = ab.icon;
   }
+  const ab2 = ABILITIES2[me.cls];
+  if (ab2) {
+    const left2 = (me.ability2ReadyAt || 0) - Date.now();
+    const at2 = document.getElementById('ability2Txt');
+    at2.textContent = ab2.icon + ' T ' + ab2.name + ' ' + (left2 > 0 ? Math.ceil(left2 / 1000) + 's' : 'bereit');
+    at2.className = left2 > 0 ? '' : 'ready';
+    document.getElementById('mAbility2').textContent = ab2.icon;
+  }
+  document.getElementById('keysTxt').textContent = me.keys || 0;
+  document.getElementById('menuOptionTown').textContent = me.zone === 'town' ? '🚪 Stadt verlassen' : '🏘️ Zur Stadt';
+  {
+    const rb = document.getElementById('raidBar'), er = (world.events || {}).raid;
+    if (er && me.zone === 'raid') {
+      const left = Math.max(0, Math.round((er.endsAt - (Date.now() + serverOffset)) / 1000));
+      rb.style.display = 'block';
+      document.getElementById('raidBarTxt').textContent = '🐉 Weltenfresser · ' + Math.max(0, Math.round(er.hp / er.maxHp * 100)) + '% · ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+      document.getElementById('raidBarFill').style.width = Math.max(0, er.hp / er.maxHp * 100) + '%';
+    } else rb.style.display = 'none';
+  }
   document.getElementById('deathOverlay').style.display = me.dead ? 'flex' : 'none';
 
   const badgeBox = document.getElementById('eventBadges');
@@ -2270,6 +2512,8 @@ function updateHud(me) {
   if (ev.goldRemaining > 0) badges.push(`<span style="background:#3a2f0f; color:#f2c94c; padding:2px 8px; border-radius:10px; font-size:10px;">💰 x2 Gold ${Math.ceil(ev.goldRemaining / 1000)}s</span>`);
   if (ev.xpRemaining > 0) badges.push(`<span style="background:#0f2c3a; color:#6fd1ff; padding:2px 8px; border-radius:10px; font-size:10px;">✨ x2 XP ${Math.ceil(ev.xpRemaining / 1000)}s</span>`);
   if (ev.bossAlive) badges.push(`<span style="background:#3a0f0f; color:#ff8a8a; padding:2px 8px; border-radius:10px; font-size:10px;">👑 Boss aktiv</span>`);
+  if (ev.raid && me.zone !== 'raid') badges.push(`<span style="background:#2a123f; color:#d9b8ff; padding:2px 8px; border-radius:10px; font-size:10px;">🐉 Raid läuft! (Menü → Raid)</span>`);
+  else if (!ev.raid && ev.raidNextAt && ev.raidNextAt - (Date.now() + serverOffset) < 5 * 60000 && ev.raidNextAt - (Date.now() + serverOffset) > 0) badges.push(`<span style="background:#2a123f; color:#d9b8ff; padding:2px 8px; border-radius:10px; font-size:10px;">🐉 Raid in ${Math.ceil((ev.raidNextAt - (Date.now() + serverOffset)) / 60000)} Min</span>`);
   badgeBox.innerHTML = badges.join('');
 }
 </script>
