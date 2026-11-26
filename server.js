@@ -68,7 +68,7 @@ async function createAccount(username, passwordHash, cls) {
     upgDmg: 0, upgHp: 0, upgSpeed: 0, quests: [],
     inventory: [], equipment: {}, skills: {}, essence: 0, cosmetics: {}, pet: null,
     stats: {}, achievements: [], daily: {}, friends: [], guild: null,
-    keys: 0, prestige: 0, season: { id: '', points: 0 },
+    keys: 0, prestige: 0, season: { id: '', points: 0 }, week: { id: '', points: 0 }, bossBest: {},
     createdAt: new Date()
   };
   if (accountsCol) await accountsCol.insertOne(doc);
@@ -85,7 +85,8 @@ async function saveAccountProgress(p) {
         upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, quests: p.quests || [],
         inventory: p.inventory || [], equipment: p.equipment || {}, skills: p.skills || {}, essence: p.essence || 0,
         cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null,
-        keys: p.keys || 0, prestige: p.prestige || 0, season: p.season || { id: '', points: 0 }
+        keys: p.keys || 0, prestige: p.prestige || 0, season: p.season || { id: '', points: 0 },
+        week: p.week || { id: '', points: 0 }, bossBest: p.bossBest || {}
       } }
     );
   } catch (err) {
@@ -391,7 +392,10 @@ const DUNGEON_TIER_DEFS = [
     theme: { wall: '#5a2a22', wallTop: '#3a1a15', floorA: '#2a1410', floorB: '#32180f' } },
   { key: 'tier6', name: 'Der Abgrund', minLevel: 50, gen: { type: 'maze', cols: 90, rows: 20 }, monsterMult: 8.3, dmgMult: 4.7, lootMult: 4.5,
     pool: [['demon', 5], ['troll', 3], ['caster', 3], ['spitter', 2]],
-    theme: { wall: '#3a2350', wallTop: '#251538', floorA: '#150d20', floorB: '#1a1128' } }
+    theme: { wall: '#3a2350', wallTop: '#251538', floorA: '#150d20', floorB: '#1a1128' } },
+  { key: 'tier7', name: 'Obsidian-Thron', minLevel: 65, gen: { type: 'rooms', gridW: 16, gridH: 4, cellSize: 15 }, monsterMult: 11.5, dmgMult: 5.8, lootMult: 5.8,
+    pool: [['demon', 4], ['troll', 3], ['caster', 4], ['spitter', 3]],
+    theme: { wall: '#23232c', wallTop: '#121218', floorA: '#0c0c11', floorB: '#101017' } }
 ];
 const DUNGEON_TIERS = {};
 const FEATURES = {};   // zone -> { vaults, secrets, trapMap }
@@ -441,7 +445,9 @@ const TOWN_NPCS = [
   { id: 'smith',   name: 'Schmied Ragna',      icon: '⚒️', panel: 'smith',   ...tileCenter(31, 5) },
   { id: 'quests',  name: 'Questgeberin Mira',  icon: '📜', panel: 'quests',  ...tileCenter(8, 18) },
   { id: 'herald',  name: 'Herold Torben',      icon: '🐉', panel: 'raid',    ...tileCenter(31, 18) },
-  { id: 'rebirth', name: 'Meister der Wiedergeburt', icon: '⭐', panel: 'rebirth', ...tileCenter(20, 5) }
+  { id: 'rebirth', name: 'Meister der Wiedergeburt', icon: '⭐', panel: 'rebirth', ...tileCenter(20, 5) },
+  { id: 'craft',   name: 'Werkstatt',           icon: '🔨', panel: 'craft',   ...tileCenter(20, 18) },
+  { id: 'joker',   name: 'Gaukler Finn',        icon: '🤡', panel: 'buff',    ...tileCenter(35, 11) }
 ];
 
 function mapFor(zone) {
@@ -472,7 +478,8 @@ const BOSSROOM_CENTER = { x: BOSSROOM_CENTER_TILE.x * TILE + TILE / 2, y: BOSSRO
 const CLASSES = {
   krieger: { name: 'Krieger', maxHp: 150, speed: 2.4, dmg: 18, range: 42, cooldown: 500, kind: 'melee', color: '#e74c3c' },
   magier:  { name: 'Magier',  maxHp: 80,  speed: 2.1, dmg: 27, range: 240, cooldown: 750, kind: 'ranged', color: '#3498db' },
-  schurke: { name: 'Schurke', maxHp: 100, speed: 3.0, dmg: 10, range: 36, cooldown: 320, kind: 'melee', color: '#2ecc71', crit: 0.25 }
+  schurke: { name: 'Schurke', maxHp: 100, speed: 3.0, dmg: 10, range: 36, cooldown: 320, kind: 'melee', color: '#2ecc71', crit: 0.25 },
+  paladin: { name: 'Paladin', maxHp: 190, speed: 2.2, dmg: 15, range: 46, cooldown: 620, kind: 'melee', color: '#f1c40f' }
 };
 
 function statsForLevel(clsKey, level) {
@@ -503,12 +510,16 @@ function recomputeStats(p) {
 }
 
 const SHOP_ITEMS = {
-  potion: { label: '🧪 Heiltrank', baseCost: 12, scale: 0, maxCount: null },
-  speedpotion: { label: '⚡ Tempo-Trank (15s +60% Tempo)', baseCost: 15, scale: 0, maxCount: null },
-  dmg: { label: '⚔️ Waffe schärfen (+2 Schaden)', baseCost: 25, scale: 20, maxCount: 10 },
-  hp: { label: '🛡️ Rüstung verstärken (+15 max. HP)', baseCost: 25, scale: 20, maxCount: 10 },
-  speed: { label: '👢 Leichtere Stiefel (+Tempo)', baseCost: 30, scale: 25, maxCount: 5 }
+  potion: { label: '🧪 Heiltrank', cat: 'verbrauch', baseCost: 12, scale: 0, maxCount: null },
+  speedpotion: { label: '⚡ Tempo-Trank (15s +60% Tempo)', cat: 'verbrauch', baseCost: 15, scale: 0, maxCount: null },
+  dmg: { label: '⚔️ Waffe schärfen (+2 Schaden)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
+  hp: { label: '🛡️ Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
+  speed: { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
 };
+// Trinkgeld-Links: hier die eigenen URLs eintragen (z.B. PayPal.Me oder Ko-fi).
+// Solange leer, zeigt der Client "demnächst" an.
+const DONATE_LINKS = { paypal: '', kofi: '' };
+const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert' };
 function shopCost(itemKey, currentCount) {
   const def = SHOP_ITEMS[itemKey];
   return def.baseCost + def.scale * currentCount;
@@ -684,7 +695,7 @@ function checkTraps(p, now) {
   if (((now + ph) % TRAP_CYCLE) < TRAP_ACTIVE_FROM) return;
   if (now - (p.trapAt || 0) < 900) return;
   p.trapAt = now;
-  damagePlayer(p, Math.max(5, Math.round(p.maxHp * 0.07)));
+  damagePlayer(p, Math.max(5, Math.round(p.maxHp * 0.07)), 'einer Stachelfalle');
   io.to(p.id).emit('trapHit');
 }
 
@@ -730,7 +741,8 @@ function updateRooms() {
 const ABILITIES2 = {
   krieger: { name: 'Bollwerk', icon: '🛡️', cd: 18000 },
   magier:  { name: 'Meteor', icon: '☄️', cd: 16000 },
-  schurke: { name: 'Klingentanz', icon: '🗡️', cd: 14000 }
+  schurke: { name: 'Klingentanz', icon: '🗡️', cd: 14000 },
+  paladin: { name: 'Lichtwall', icon: '🔆', cd: 20000 }
 };
 function areaDamage(p, x, y, r, dmg) {
   if (!players[p.id] || p.dead) return;
@@ -784,6 +796,11 @@ function useAbility2(p) {
         areaDamage(p, p.x, p.y, R, dmg);
       }, i * 320);
     }
+  } else if (p.cls === 'paladin') {
+    // Lichtwall: 4 s halber Schaden, sofort 20% Heilung
+    p.guardUntil = now + 4000;
+    p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.2));
+    io.emit('abilityFx', { type: 'guard', x: p.x, y: p.y, r: 60, zone: p.zone, ms: 700 });
   }
 }
 
@@ -816,15 +833,66 @@ function checkSeason(p) {
 }
 function addSeasonPoints(p, n) {
   if (!p || !n) return;
+  const pts = Math.round(n);
   checkSeason(p);
-  p.season.points += Math.round(n);
+  p.season.points += pts;
+  checkWeek(p);
+  p.week.points += pts;
+  guildGainXp(p, pts);
+}
+function guildGainXp(p, n) {
+  if (!p.guild) return;
+  const g = guildCache.get(p.guild);
+  if (!g) return;
+  g.xp = (g.xp || 0) + n;
+  saveGuild(g);
 }
 function sendSeason(p) {
   io.to(p.id).emit('season', { id: p.season.id, points: p.season.points, endsAt: seasonEndsAt() });
 }
 setInterval(() => {
-  for (const id in players) { if (checkSeason(players[id])) sendSeason(players[id]); }
+  for (const id in players) {
+    const p = players[id];
+    if (checkSeason(p)) sendSeason(p);
+    if (checkWeek(p)) sendWeek(p);
+  }
 }, 5 * 60 * 1000);
+
+// ---------------- Wochen-Challenge ----------------
+function weekId() {
+  const d = new Date();
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return date.getUTCFullYear() + '-W' + String(week).padStart(2, '0');
+}
+function weekEndsAt() {
+  const d = new Date();
+  const day = d.getUTCDay() || 7;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + (8 - day));
+}
+function checkWeek(p) {
+  const cur = weekId();
+  if (!p.week || typeof p.week !== 'object') p.week = { id: '', points: 0 };
+  if (p.week.id === cur) return false;
+  const old = p.week;
+  p.week = { id: cur, points: 0 };
+  if (old.id && old.points >= SEASON_TIERS[0].pts) {
+    let tier = SEASON_TIERS[0];
+    for (const t of SEASON_TIERS) if (old.points >= t.pts) tier = t;
+    const gold = Math.round(tier.gold / 2), essence = Math.round(tier.essence / 2);
+    p.gold += gold; p.essence += essence;
+    if (tier.item) giveItem(p, genItem(p.level, tier.item));
+    io.to(p.id).emit('weekEnd', { id: old.id, points: old.points, tier: tier.name, gold, essence });
+  }
+  saveAccountProgress(p);
+  return true;
+}
+function sendWeek(p) {
+  io.to(p.id).emit('week', { id: p.week.id, points: p.week.points, endsAt: weekEndsAt() });
+}
 
 // ---------------- Welt-Boss (Raid) ----------------
 const raid = { active: false, bossId: null, endsAt: 0, nextAt: Date.now() + 6 * 60 * 1000, warned: false, joined: new Set(), deaths: {}, perPlayerHp: 0 };
@@ -934,6 +1002,8 @@ function applyPvpDamage(target, dmg, attacker) {
   io.emit('hit', { x: target.x, y: target.y, dmg });
   if (target.hp <= 0 && !target.dead) {
     target.dead = true;
+    target.deadBy = attacker && attacker !== target ? attacker.name : 'einem Spieler';
+    io.to(target.id).emit('died', { by: target.deadBy });
     setTimeout(() => respawnPlayer(target), 2000);
     if (attacker && attacker !== target) { attacker.stats.pvpKills++; addSeasonPoints(attacker, 5); questProgress(attacker, 'pvp', 1); checkAchievements(attacker); }
   }
@@ -965,6 +1035,7 @@ function respawnPlayer(p) {
   p.y = sp.y;
   p.hp = isDungeonTier(p.zone) ? Math.max(1, Math.floor(p.maxHp * 0.5)) : p.maxHp;
   p.fx = {};
+  p.deadBy = null;
   p.dead = false;
 }
 
@@ -1025,6 +1096,15 @@ function onMonsterKilled(m, killer) {
     if (killer) killer.potions += 2;
     if (killer && isDungeonTier(zone)) giveKey(killer, 1);
     io.emit('announcement', `🏆 ${killer ? killer.name : 'Jemand'} hat ${m.name || 'den Boss'} besiegt! Riesiger Loot-Regen!`);
+    if (killer && isDungeonTier(zone) && m.spawnAt) {
+      const secs = Math.max(1, Math.round((Date.now() - m.spawnAt) / 1000));
+      const bb = killer.bossBest || (killer.bossBest = {});
+      if (!bb[zone] || secs < bb[zone]) {
+        bb[zone] = secs;
+        saveAccountProgress(killer);
+        notice(killer, `⏱️ Neuer Boss-Rekord in ${(DUNGEON_TIERS[zone] || {}).name || zone}: ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}!`);
+      }
+    }
   } else if (m.type === 'treasure') {
     for (let i = 0; i < 10; i++) {
       const it = spawnItem(m.x + (Math.random() * 60 - 30), m.y + (Math.random() * 60 - 30), zone, 'gold');
@@ -1053,7 +1133,8 @@ function onMonsterKilled(m, killer) {
 const ABILITIES = {
   krieger: { name: 'Wirbelschlag', icon: '🌀', cd: 8000 },
   magier:  { name: 'Feuernova', icon: '🔥', cd: 10000 },
-  schurke: { name: 'Schattenschritt', icon: '👤', cd: 7000 }
+  schurke: { name: 'Schattenschritt', icon: '👤', cd: 7000 },
+  paladin: { name: 'Heiliger Ruf', icon: '✨', cd: 9000 }
 };
 
 function rollDamage(p, def) {
@@ -1115,6 +1196,11 @@ function useAbility(p) {
     for (let i = 0; i < 15; i++) tryMove(mapFor(p.zone), p, Math.cos(ang) * 10, Math.sin(ang) * 10, 12);
     p.critUntil = now + 4000;
     io.emit('abilityFx', { type: 'dash', x: sx, y: sy, x2: p.x, y2: p.y, zone: p.zone });
+  } else if (p.cls === 'paladin') {
+    // Heiliger Ruf: heilt sich zu 25% und trifft Gegner im Umkreis mit hellem Schlag
+    p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.25));
+    areaDamage(p, p.x, p.y, 100, Math.round(p.dmg * 1.2 * pw));
+    io.emit('abilityFx', { type: 'nova', x: p.x, y: p.y, r: 100, zone: p.zone });
   }
 }
 
@@ -1388,7 +1474,9 @@ function profileFromAccount(a) {
     daily: { last: a.daily && typeof a.daily.last === 'string' ? a.daily.last : '', streak: Math.max(0, Number(a.daily && a.daily.streak) || 0) },
     keys: Math.max(0, Math.min(99, Number(a.keys) || 0)),
     prestige: Math.max(0, Math.min(PRESTIGE_MAX, Number(a.prestige) || 0)),
-    season: { id: a.season && typeof a.season.id === 'string' ? a.season.id.slice(0, 10) : '', points: Math.max(0, Number(a.season && a.season.points) || 0) }
+    season: { id: a.season && typeof a.season.id === 'string' ? a.season.id.slice(0, 10) : '', points: Math.max(0, Number(a.season && a.season.points) || 0) },
+    week: { id: a.week && typeof a.week.id === 'string' ? a.week.id.slice(0, 10) : '', points: Math.max(0, Number(a.week && a.week.points) || 0) },
+    bossBest: (a.bossBest && typeof a.bossBest === 'object') ? a.bossBest : {}
   };
 }
 function sendProfile(p) {
@@ -1575,11 +1663,11 @@ setInterval(() => {
 
 // ---------------- Statuseffekte, Dungeon-Bosse, Zufallsereignisse ----------------
 const EFFECT_MS = { slow: 3000, poison: 5000, burn: 4000 };
-const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher' };
+const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher', tier7: 'Obsidianfürst' };
 const TIER_BOSS_INTERVAL_MS = 8 * 60 * 1000;
 const tierBosses = {};
 
-function damagePlayer(target, dmg) {
+function damagePlayer(target, dmg, src) {
   if (target.dead) return;
   if (target.guardUntil && target.guardUntil > Date.now()) dmg = Math.round(dmg * 0.5);
   target.hp -= dmg;
@@ -1587,6 +1675,8 @@ function damagePlayer(target, dmg) {
   if (target.hp <= 0 && !target.dead) {
     target.dead = true;
     target.fx = {};
+    target.deadBy = src || null;
+    io.to(target.id).emit('died', { by: src || null });
     setTimeout(() => respawnPlayer(target), 3000);
   }
 }
@@ -1607,7 +1697,7 @@ function updateEffects(p, now) {
   p.dotAt = now;
   for (const k of ['poison', 'burn']) {
     const e = p.fx[k];
-    if (e && e.until > now) damagePlayer(p, e.dmg);
+    if (e && e.until > now) damagePlayer(p, e.dmg, k === 'poison' ? 'Gift' : 'Feuer');
   }
 }
 
@@ -1627,7 +1717,7 @@ function bossSlam(m, def) {
     for (const pid in players) {
       const p = players[pid];
       if (p.dead || p.zone !== zone) continue;
-      if (dist(p.x, p.y, cx, cy) < R + 10) damagePlayer(p, dmg);
+      if (dist(p.x, p.y, cx, cy) < R + 10) damagePlayer(p, dmg, m.name || 'dem Boss');
     }
   }, 1200);
 }
@@ -1642,7 +1732,7 @@ function spawnTierBoss(zone) {
   const name = TIER_BOSS_NAMES[zone] || 'Dungeon-Boss';
   const x = tile.x * TILE + TILE / 2, y = tile.y * TILE + TILE / 2;
   monsters[id] = {
-    id, type: 'boss', zone, mult: tier.monsterMult, dmgMult: tier.dmgMult || Math.pow(tier.monsterMult, 0.65), name,
+    id, type: 'boss', zone, mult: tier.monsterMult, dmgMult: tier.dmgMult || Math.pow(tier.monsterMult, 0.65), name, spawnAt: Date.now(),
     hp, maxHp: hp, x, y, lastAttack: 0, targetId: null, homeX: x, homeY: y
   };
   tierBosses[zone] = id;
@@ -1768,6 +1858,7 @@ const BOSS_SPECIALS = {
   tier4: ['fan', 'rockfall', 'heal'],
   tier5: ['rockfall', 'fan', 'enrage', 'volley'],
   tier6: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
+  tier7: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
   bossroom: ['summon', 'fan', 'enrage', 'volley'],
   raid: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal']
 };
@@ -1775,6 +1866,7 @@ const BOSS_FAN = {
   tier4: { effect: 'slow', color: '#9be8ff' },
   tier5: { effect: 'burn', color: '#ff8a3c' },
   tier6: { effect: 'poison', color: '#8fff6b' },
+  tier7: { effect: 'burn', color: '#ff5d8a' },
   raid: { effect: 'burn', color: '#c77dff' }
 };
 const BOSS_ADD_MAX = 8;
@@ -1846,7 +1938,7 @@ function bossRockfall(m, def) {
       for (const pid in players) {
         const p = players[pid];
         if (p.dead || p.zone !== zone) continue;
-        if (dist(p.x, p.y, s.x, s.y) < R + 10) damagePlayer(p, dmg);
+        if (dist(p.x, p.y, s.x, s.y) < R + 10) damagePlayer(p, dmg, m.name || 'dem Boss');
       }
     }
   }, 1400);
@@ -1896,6 +1988,7 @@ function bossSpecial(m, def) {
 // ---------------- Gilden ----------------
 const GUILD_MAX = 20;
 const GUILD_COST = 500;
+function guildLevel(g) { return Math.min(10, Math.floor(Math.sqrt(Math.max(0, g.xp || 0) / 100))); }
 const guildCache = new Map();    // key -> { key, name, tag, leader, members:[username] }
 const guildInvites = {};         // Ziel-Socket -> { fromId, guild, expires }
 
@@ -1908,25 +2001,28 @@ async function loadGuild(key) {
   return g || null;
 }
 async function saveGuild(g) {
-  if (guildsCol) await guildsCol.updateOne({ key: g.key }, { $set: { name: g.name, tag: g.tag, leader: g.leader, members: g.members } });
+  if (guildsCol) await guildsCol.updateOne({ key: g.key }, { $set: { name: g.name, tag: g.tag, leader: g.leader, members: g.members, xp: g.xp || 0, level: guildLevel(g) } });
 }
 function guildOnline(g) { return g.members.map(u => findOnline(u)).filter(Boolean); }
 function sendGuild(p) {
   const g = p.guild && guildCache.get(p.guild);
   io.to(p.id).emit('guild', g ? {
     name: g.name, tag: g.tag, leader: g.leader, you: p.username,
+    level: guildLevel(g), xp: g.xp || 0,
     members: g.members.map(u => { const o = findOnline(u); return { username: u, online: !!o, name: o ? o.name : null, level: o ? o.level : null }; })
   } : null);
 }
 function refreshGuildMembers(g) { for (const o of guildOnline(g)) sendGuild(o); }
 function guildBonus(p) {
   if (!p.guild) return 0;
+  const g = guildCache.get(p.guild);
+  const lvlBonus = g ? Math.min(0.10, guildLevel(g) * 0.01) : 0;
   let n = 0;
   for (const id in players) {
     const o = players[id];
     if (o.id !== p.id && o.guild === p.guild && o.zone === p.zone && !o.dead && dist(o.x, o.y, p.x, p.y) < 1000) n++;
   }
-  return Math.min(0.15, n * 0.05);
+  return Math.min(0.25, n * 0.05 + lvlBonus);
 }
 function setGuild(p, g) {
   p.guild = g ? g.key : null;
@@ -2065,12 +2161,15 @@ io.on('connection', (socket) => {
         tile: TILE,
         classes: CLASSES,
         shop: SHOP_ITEMS,
+        donate: DONATE_LINKS,
         isAdmin: players[socket.id].isAdmin
       });
       sendQuests(players[socket.id]);
       checkSeason(players[socket.id]);
       sendProfile(players[socket.id]);
       sendSeason(players[socket.id]);
+      checkWeek(players[socket.id]);
+      sendWeek(players[socket.id]);
       dailyReward(players[socket.id]);
       checkAchievements(players[socket.id]);
       sendGuild(players[socket.id]);
@@ -2099,6 +2198,7 @@ io.on('connection', (socket) => {
     const def = CLASSES[p.cls];
     if (now - p.lastAttack < def.cooldown) return;
     p.lastAttack = now;
+    io.emit('swing', { id: p.id, zone: p.zone });
     revealSecrets(p);
 
     if (p.zone === 'arena') {
@@ -2767,6 +2867,41 @@ io.on('connection', (socket) => {
     saveAccountProgress(p);
   });
 
+  socket.on('jokerBuff', () => {
+    const p = players[socket.id];
+    if (!p || p.dead || p.zone !== 'town') return;
+    const now = Date.now();
+    if (now < (p.jokerAt || 0)) return notice(p, `🤡 Finn macht erst in ${Math.ceil((p.jokerAt - now) / 60000)} Min. wieder einen Spruch.`);
+    p.jokerAt = now + 5 * 60000;
+    const roll = Math.random();
+    if (roll < 0.3) {
+      p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.4));
+      notice(p, '🤡 „Heilkraut!" — du bist wieder fit!');
+    } else if (roll < 0.6) {
+      p.speedBoostUntil = now + 60000;
+      notice(p, '🤡 „Spring in den Sack!" — 60 s Turbo-Tempo!');
+    } else if (roll < 0.85) {
+      p.gold += 60;
+      notice(p, '🤡 „Zaubermünze!" — 60 Gold für dich!');
+    } else {
+      p.essence += 8;
+      notice(p, '🤡 „Glitzerpulver!" — 8 Essenz für dich!');
+    }
+    io.to(p.id).emit('abilityFx', { type: 'nova', x: p.x, y: p.y, r: 60, zone: p.zone });
+  });
+
+  socket.on('emote', (e) => {
+    const p = players[socket.id];
+    const txt = EMOTES[e];
+    if (!p || !txt) return;
+    io.emit('emote', { name: p.name, text: txt });
+  });
+
+  socket.on('setMagnet', (on) => {
+    const p = players[socket.id];
+    if (p) p.magnet = !!on;
+  });
+
   socket.on('useSpeedPotion', () => {
     const p = players[socket.id];
     if (!p || p.dead) return;
@@ -2822,6 +2957,7 @@ io.on('connection', (socket) => {
   socket.on('joinTown', () => {
     const p = players[socket.id];
     if (!p || p.dead || p.zone === 'town') return;
+    if (p.zone === 'raid' || p.zone === 'bossroom') return notice(p, 'In diesem Bereich geht das nicht.');
     p.zone = 'town'; p.x = TOWN_SPAWN.x; p.y = TOWN_SPAWN.y; p.hp = p.maxHp; p.fx = {};
   });
   socket.on('leaveTown', () => {
@@ -2920,6 +3056,8 @@ io.on('connection', (socket) => {
     if (!p) return;
     checkSeason(p);
     sendSeason(p);
+    checkWeek(p);
+    sendWeek(p);
   });
   let seasonLb = { at: 0, id: '', rows: [] };
   socket.on('seasonBoard', async () => {
@@ -2990,7 +3128,7 @@ function tick() {
     for (const iid in items) {
       const it = items[iid];
       if ((it.zone || DEFAULT_TIER_KEY) !== p.zone) continue;
-      if (dist(p.x, p.y, it.x, it.y) < 20) {
+      if (dist(p.x, p.y, it.x, it.y) < (p.magnet ? 70 : 20)) {
         if (it.type === 'gold') { const g = Math.round(it.amount * goldBonus(p)); p.gold += g; p.stats.goldEarned += g; questProgress(p, 'gold', g); checkAchievements(p); }
         else if (it.type === 'potion') p.potions += 1;
         delete items[iid];
@@ -3034,7 +3172,7 @@ function tick() {
           m.lastAttack = now;
           if (def.dmg > 0) {
             const dmg = Math.round(def.dmg * (m.dmgMult || 1));
-            damagePlayer(target, dmg);
+            damagePlayer(target, dmg, m.name || MONSTER_TYPES[m.type].name || 'einem Monster');
             if (def.effect) applyEffect(target, def.effect, dmg);
           }
         }
@@ -3065,7 +3203,8 @@ function tick() {
           const pl = players[pid];
           if (pl.dead || pl.zone !== pr.zone) continue;
           if (dist(pr.x, pr.y, pl.x, pl.y) < 20) {
-            damagePlayer(pl, pr.dmg);
+            const srcM = monsters[pr.ownerId];
+            damagePlayer(pl, pr.dmg, srcM ? (srcM.name || (MONSTER_TYPES[srcM.type] && MONSTER_TYPES[srcM.type].name) || 'einem Monster') : 'einem Monster');
             if (pr.effect) applyEffect(pl, pr.effect, pr.dmg);
             hitSomething = true;
             break;
@@ -3127,7 +3266,8 @@ function fullOf(p) {
     xp: p.xp, xpNext: p.xpNext, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions,
     speedBoostUntil: p.speedBoostUntil, abilityReadyAt: p.abilityReadyAt || 0, essence: p.essence,
     upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed,
-    keys: p.keys || 0, ability2ReadyAt: p.ability2ReadyAt || 0, guardUntil: p.guardUntil || 0, seasonPts: p.season ? p.season.points : 0
+    keys: p.keys || 0, ability2ReadyAt: p.ability2ReadyAt || 0, guardUntil: p.guardUntil || 0, seasonPts: p.season ? p.season.points : 0,
+    bossBest: p.bossBest || {}
   });
 }
 
