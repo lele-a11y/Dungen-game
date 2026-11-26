@@ -399,7 +399,7 @@
 
   <div id="chatBox"></div>
   <input id="chatInput" placeholder="Enter zum Chatten..." style="display:none;">
-  <div id="hint" style="display:none;">WASD/Pfeile: Bewegen&nbsp;·&nbsp;Klick/Leertaste: Angriff&nbsp;·&nbsp;E: Trank&nbsp;·&nbsp;R: Tempo-Trank&nbsp;·&nbsp;Q/T: Fähigkeiten&nbsp;·&nbsp;C: Charakter&nbsp;·&nbsp;B: Shop&nbsp;·&nbsp;F: Interagieren&nbsp;·&nbsp;Esc: Menü</div>
+  <div id="hint" style="display:none;">WASD/Pfeile: Bewegen&nbsp;·&nbsp;Klick/Leertaste: Angriff&nbsp;·&nbsp;E: Trank&nbsp;·&nbsp;R: Tempo-Trank&nbsp;·&nbsp;Q/T: Fähigkeiten&nbsp;·&nbsp;C: Charakter&nbsp;·&nbsp;B: Shop&nbsp;·&nbsp;F: Interagieren&nbsp;·&nbsp;G: Stadt&nbsp;·&nbsp;Esc: Menü</div>
 
   <div id="orientHint">📱 Quer spielen ist bequemer</div>
   <button id="menuBtn">☰</button>
@@ -434,6 +434,7 @@
     <button class="menuOption" id="menuOptionGfx">🎨 Grafik: Hoch</button>
     <button class="menuOption" id="menuOptionMusic">🎵 Musik: an</button>
     <button class="menuOption" id="menuOptionSound">🔊 Ton: an</button>
+    <button class="menuOption" id="menuOptionMagnet">🧲 Items-Magnet: aus</button>
     <button class="menuOption" id="menuOptionClose">▶️ Weiterspielen</button>
     <button class="menuOption" id="menuOptionLeave">🚪 Spiel verlassen</button>
   </div>
@@ -584,6 +585,9 @@
         <div class="classBtn" data-cls="schurke">
           <span class="icon">🗡️</span>Schurke<small>Schnell, Krit-Chance</small>
         </div>
+        <div class="classBtn" data-cls="paladin">
+          <span class="icon">✝️</span>Paladin<small>Viel HP, heilt sich</small>
+        </div>
       </div>
       <div id="authMsg" style="color:#ff8080; font-size:12px; min-height:16px; margin-bottom:8px; text-align:center;"></div>
       <button id="playBtn">Einloggen &amp; Ins Dungeon!</button>
@@ -611,6 +615,7 @@ function esc(s) { return String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<
 let world = { players: [], monsters: [], items: [], chests: [], projectiles: [], events: {} };
 let selectedClass = 'krieger';
 let hitFx = [];
+const swingFx = {};   // playerId -> Zeitstempel des letzten Angriffs (Lunge-Animation)
 let currentZone = 'dungeon';
 let nearestChestId = null;
 let isAdmin = false;
@@ -871,7 +876,8 @@ const SLOT_LABELS = { weapon: 'Waffe', armor: 'Rüstung', ring: 'Ring' };
 const ABILITY_TEXT = {
   krieger: ['Wirbelschlag: 1,6-facher Schaden rundherum (8 s)', 'Bollwerk: 5 s halber Schaden, 15% Heilung (18 s)'],
   magier: ['Feuernova: Ring aus 12 Geschossen (10 s)', 'Meteor: schlägt nach 0,9 s an der Zielstelle ein, 3,2-facher Schaden (16 s)'],
-  schurke: ['Schattenschritt: Sprung und sicherer Krit (7 s)', 'Klingentanz: 3 Schläge rundherum (14 s)']
+  schurke: ['Schattenschritt: Sprung und sicherer Krit (7 s)', 'Klingentanz: 3 Schläge rundherum (14 s)'],
+  paladin: ['Heiliger Ruf: 25% Heilung + Heilschlag im Umkreis (9 s)', 'Lichtwall: 4 s halber Schaden, 20% Heilung (20 s)']
 };
 const BIG = {
   char: { title: '🎒 Charakter', tabs: [['equip', 'Ausrüstung'], ['skills', 'Fertigkeiten'], ['craft', 'Handwerk'], ['look', 'Aussehen'], ['rebirth', 'Aufstieg']] },
@@ -1386,6 +1392,7 @@ function startGame() {
     myId = data.you; DUNGEON_TIERS = data.dungeonTiers || {}; MONSTER_DEFS = data.monsterDefs || {}; ABILITIES = data.abilities || {}; DEFS = data.defs || {}; ARENA_MAP = data.arenaMap; BOSSROOM_MAP = data.bossRoomMap; TILE = data.tile; CLASSES = data.classes;
     TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {};
     isAdmin = !!data.isAdmin;
+    if (magnetOn) socket.emit('setMagnet', true);
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'flex';
     document.getElementById('hint').style.display = 'block';
@@ -1432,6 +1439,8 @@ function startGame() {
     if (r.zone === currentZone) { sfx('warn', 200); setTimeout(() => sfx('slam', 200), r.ms); }
   });
   socket.on('chat', (m) => addChat(m.name + ': ' + m.text));
+  socket.on('swing', (e) => { if (e && e.zone === currentZone) swingFx[e.id] = Date.now(); });
+  socket.on('died', (d) => { pushToast('💀 Du wurdest von ' + (d && d.by ? d.by : 'einem Monster') + ' getötet!', 3500); sfx('hurt', 100); });
   socket.on('shopError', (msg) => {
     const tm = document.getElementById('tiersMsg');
     if (tm) { tm.textContent = msg; setTimeout(() => { if (tm.textContent === msg) tm.textContent = ''; }, 3000); }
@@ -1535,6 +1544,14 @@ function bindInput() {
     if (e.key.toLowerCase() === 'c') toggleBig('char');
     if (e.key.toLowerCase() === 'b') toggleShop();
     if (e.key.toLowerCase() === 'f') interactNearest();
+    if (e.key.toLowerCase() === 'g') {
+      const mp = myPlayer();
+      if (mp) {
+        if (mp.zone === 'town') socket.emit('leaveTown');
+        else if (mp.zone === 'raid' || mp.zone === 'bossroom') pushToast('Hier geht das nicht.', 2500);
+        else socket.emit('joinTown');
+      }
+    }
     if (e.key === 'Escape') { if (bigKind) closeBig(); else toggleMenu(); }
     sendInput();
   });
@@ -1672,6 +1689,7 @@ function openNpc(panel) {
   else if (panel === 'smith') openBig('char', 'equip');
   else if (panel === 'raid') openBig('raid', 'raid');
   else if (panel === 'rebirth') openBig('char', 'rebirth');
+  else if (panel === 'craft') openBig('char', 'craft');
 }
 
 function sendInput() {
@@ -1707,6 +1725,16 @@ document.getElementById('menuOptionGfx').addEventListener('click', () => {
   updateGfxBtn();
 });
 updateGfxBtn();
+let magnetOn = false;
+try { magnetOn = localStorage.getItem('dungeonMagnet') === '1'; } catch (err) {}
+function updateMagnetBtn() { document.getElementById('menuOptionMagnet').textContent = '🧲 Items-Magnet: ' + (magnetOn ? 'an' : 'aus'); }
+document.getElementById('menuOptionMagnet').addEventListener('click', () => {
+  magnetOn = !magnetOn;
+  try { localStorage.setItem('dungeonMagnet', magnetOn ? '1' : '0'); } catch (err) {}
+  if (socket) socket.emit('setMagnet', magnetOn);
+  updateMagnetBtn();
+});
+updateMagnetBtn();
 const smooth = new Map();      // weiche Bewegung: Schluessel -> { x, y, fx, fy, mv, seen }
 const particles = [];
 let frameId = 0, lastFrameAt = Date.now();
@@ -1790,6 +1818,11 @@ function drawHero(p, sx, sy, s, t) {
   const moving = s.mv > 0.25;
   const by = sy + (moving ? Math.sin(t / 85) * 0.7 : Math.sin(t / 520) * 0.3) - 1;
   const fx = s.fx, fy = s.fy, ox = -fy, oy = fx;
+  const swingAt = swingFx[p.id];
+  if (swingAt) {
+    const lt = Date.now() - swingAt;
+    if (lt < 200) { const o = Math.sin(lt / 200 * Math.PI) * 5; sx += fx * o; sy += fy * o; }
+  }
   drawShadow(sx, sy + 11, 11, 4.5);
   if (p.guardUntil && p.guardUntil > Date.now() + serverOffset) { glow(sx, sy, 30, 'rgba(100,170,255,0.3)'); ctx.strokeStyle = 'rgba(130,190,255,0.85)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(sx, by, 20, 0, TAU); ctx.stroke(); }
   ctx.lineCap = 'round';
@@ -1808,12 +1841,20 @@ function drawHero(p, sx, sy, s, t) {
     const tx = hx + fx * 15, ty = hy + fy * 15;
     glow(tx, ty, 11, 'rgba(120,220,255,0.65)');
     ctx.fillStyle = '#9be8ff'; ctx.beginPath(); ctx.arc(tx, ty, 4 + Math.sin(t / 180) * 0.8, 0, TAU); ctx.fill();
-  } else {
+  } else if (p.cls === 'schurke') {
     ctx.strokeStyle = '#cfd6e6'; ctx.lineWidth = 2.5;
     for (const sd of [-1, 1]) {
       const hx = sx + ox * 11 * sd + fx * 3, hy = by + oy * 11 * sd + fy * 3;
       ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + fx * 10, hy + fy * 10); ctx.stroke();
     }
+  } else if (p.cls === 'paladin') {
+    const hx = sx - ox * 10 + fx * 3, hy = by - oy * 10 + fy * 3;
+    ctx.strokeStyle = '#f4e6c8'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + fx * 15, hy + fy * 15); ctx.stroke();
+    ctx.strokeStyle = '#8a6a1f'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(hx - fx * 3, hy - fy * 3); ctx.lineTo(hx, hy); ctx.stroke();
+    ctx.fillStyle = '#d9b23c'; ctx.strokeStyle = '#5a4310'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(sx + ox * 11 + fx * 2, by + oy * 11 + fy * 2, 6, 0, TAU); ctx.fill(); ctx.stroke();
   }
   const g = ctx.createRadialGradient(sx - 3, by - 4, 2, sx, by, 13);
   g.addColorStop(0, shade(color, 45)); g.addColorStop(1, shade(color, -35));
@@ -2386,7 +2427,7 @@ function render() {
   if (gfxHigh) { ensureVignette(); ctx.drawImage(vignetteCanvas, 0, 0); }
 
   // ---- Aufraeumen der weichen Bewegung ----
-  if (frameId % 90 === 0) for (const [key, s] of smooth) if (frameId - s.seen > 120) smooth.delete(key);
+  if (frameId % 90 === 0) { for (const [key, s] of smooth) if (frameId - s.seen > 120) smooth.delete(key); for (const k in swingFx) if (now - swingFx[k] > 1000) delete swingFx[k]; }
 
   drawMinimap(me, activeMap, currentZone);
 }
@@ -2485,6 +2526,8 @@ function drawMinimap(me, rows, zone) {
     else if (m.type === 'treasure') dot(m.x, m.y, 3, '#ffd700');
   }
   for (const p of world.players) if (p.id !== myId && p.zone === zone && !p.dead && isExplored(p.x, p.y, zone, rows)) dot(p.x, p.y, 2.5, '#6fd1ff');
+  for (const c of world.chests || []) if (c.zone === zone && !c.looted && isExplored(c.x, c.y, zone, rows)) dot(c.x, c.y, 2, '#c98d4b');
+  if (zone === 'town' && TOWN) for (const n of TOWN.npcs) if (isExplored(n.x, n.y, zone, rows)) dot(n.x, n.y, 2.5, '#ffd166');
   dot(me.x, me.y, 3, '#ffffff');
 }
 

@@ -391,7 +391,10 @@ const DUNGEON_TIER_DEFS = [
     theme: { wall: '#5a2a22', wallTop: '#3a1a15', floorA: '#2a1410', floorB: '#32180f' } },
   { key: 'tier6', name: 'Der Abgrund', minLevel: 50, gen: { type: 'maze', cols: 90, rows: 20 }, monsterMult: 8.3, dmgMult: 4.7, lootMult: 4.5,
     pool: [['demon', 5], ['troll', 3], ['caster', 3], ['spitter', 2]],
-    theme: { wall: '#3a2350', wallTop: '#251538', floorA: '#150d20', floorB: '#1a1128' } }
+    theme: { wall: '#3a2350', wallTop: '#251538', floorA: '#150d20', floorB: '#1a1128' } },
+  { key: 'tier7', name: 'Obsidian-Thron', minLevel: 65, gen: { type: 'rooms', gridW: 16, gridH: 4, cellSize: 15 }, monsterMult: 11.5, dmgMult: 5.8, lootMult: 5.8,
+    pool: [['demon', 4], ['troll', 3], ['caster', 4], ['spitter', 3]],
+    theme: { wall: '#23232c', wallTop: '#121218', floorA: '#0c0c11', floorB: '#101017' } }
 ];
 const DUNGEON_TIERS = {};
 const FEATURES = {};   // zone -> { vaults, secrets, trapMap }
@@ -441,7 +444,8 @@ const TOWN_NPCS = [
   { id: 'smith',   name: 'Schmied Ragna',      icon: '⚒️', panel: 'smith',   ...tileCenter(31, 5) },
   { id: 'quests',  name: 'Questgeberin Mira',  icon: '📜', panel: 'quests',  ...tileCenter(8, 18) },
   { id: 'herald',  name: 'Herold Torben',      icon: '🐉', panel: 'raid',    ...tileCenter(31, 18) },
-  { id: 'rebirth', name: 'Meister der Wiedergeburt', icon: '⭐', panel: 'rebirth', ...tileCenter(20, 5) }
+  { id: 'rebirth', name: 'Meister der Wiedergeburt', icon: '⭐', panel: 'rebirth', ...tileCenter(20, 5) },
+  { id: 'craft',   name: 'Werkstatt',           icon: '🔨', panel: 'craft',   ...tileCenter(20, 18) }
 ];
 
 function mapFor(zone) {
@@ -472,7 +476,8 @@ const BOSSROOM_CENTER = { x: BOSSROOM_CENTER_TILE.x * TILE + TILE / 2, y: BOSSRO
 const CLASSES = {
   krieger: { name: 'Krieger', maxHp: 150, speed: 2.4, dmg: 18, range: 42, cooldown: 500, kind: 'melee', color: '#e74c3c' },
   magier:  { name: 'Magier',  maxHp: 80,  speed: 2.1, dmg: 27, range: 240, cooldown: 750, kind: 'ranged', color: '#3498db' },
-  schurke: { name: 'Schurke', maxHp: 100, speed: 3.0, dmg: 10, range: 36, cooldown: 320, kind: 'melee', color: '#2ecc71', crit: 0.25 }
+  schurke: { name: 'Schurke', maxHp: 100, speed: 3.0, dmg: 10, range: 36, cooldown: 320, kind: 'melee', color: '#2ecc71', crit: 0.25 },
+  paladin: { name: 'Paladin', maxHp: 190, speed: 2.2, dmg: 15, range: 46, cooldown: 620, kind: 'melee', color: '#f1c40f' }
 };
 
 function statsForLevel(clsKey, level) {
@@ -684,7 +689,7 @@ function checkTraps(p, now) {
   if (((now + ph) % TRAP_CYCLE) < TRAP_ACTIVE_FROM) return;
   if (now - (p.trapAt || 0) < 900) return;
   p.trapAt = now;
-  damagePlayer(p, Math.max(5, Math.round(p.maxHp * 0.07)));
+  damagePlayer(p, Math.max(5, Math.round(p.maxHp * 0.07)), 'einer Stachelfalle');
   io.to(p.id).emit('trapHit');
 }
 
@@ -730,7 +735,8 @@ function updateRooms() {
 const ABILITIES2 = {
   krieger: { name: 'Bollwerk', icon: '🛡️', cd: 18000 },
   magier:  { name: 'Meteor', icon: '☄️', cd: 16000 },
-  schurke: { name: 'Klingentanz', icon: '🗡️', cd: 14000 }
+  schurke: { name: 'Klingentanz', icon: '🗡️', cd: 14000 },
+  paladin: { name: 'Lichtwall', icon: '🔆', cd: 20000 }
 };
 function areaDamage(p, x, y, r, dmg) {
   if (!players[p.id] || p.dead) return;
@@ -784,6 +790,11 @@ function useAbility2(p) {
         areaDamage(p, p.x, p.y, R, dmg);
       }, i * 320);
     }
+  } else if (p.cls === 'paladin') {
+    // Lichtwall: 4 s halber Schaden, sofort 20% Heilung
+    p.guardUntil = now + 4000;
+    p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.2));
+    io.emit('abilityFx', { type: 'guard', x: p.x, y: p.y, r: 60, zone: p.zone, ms: 700 });
   }
 }
 
@@ -934,6 +945,8 @@ function applyPvpDamage(target, dmg, attacker) {
   io.emit('hit', { x: target.x, y: target.y, dmg });
   if (target.hp <= 0 && !target.dead) {
     target.dead = true;
+    target.deadBy = attacker && attacker !== target ? attacker.name : 'einem Spieler';
+    io.to(target.id).emit('died', { by: target.deadBy });
     setTimeout(() => respawnPlayer(target), 2000);
     if (attacker && attacker !== target) { attacker.stats.pvpKills++; addSeasonPoints(attacker, 5); questProgress(attacker, 'pvp', 1); checkAchievements(attacker); }
   }
@@ -965,6 +978,7 @@ function respawnPlayer(p) {
   p.y = sp.y;
   p.hp = isDungeonTier(p.zone) ? Math.max(1, Math.floor(p.maxHp * 0.5)) : p.maxHp;
   p.fx = {};
+  p.deadBy = null;
   p.dead = false;
 }
 
@@ -1053,7 +1067,8 @@ function onMonsterKilled(m, killer) {
 const ABILITIES = {
   krieger: { name: 'Wirbelschlag', icon: '🌀', cd: 8000 },
   magier:  { name: 'Feuernova', icon: '🔥', cd: 10000 },
-  schurke: { name: 'Schattenschritt', icon: '👤', cd: 7000 }
+  schurke: { name: 'Schattenschritt', icon: '👤', cd: 7000 },
+  paladin: { name: 'Heiliger Ruf', icon: '✨', cd: 9000 }
 };
 
 function rollDamage(p, def) {
@@ -1115,6 +1130,11 @@ function useAbility(p) {
     for (let i = 0; i < 15; i++) tryMove(mapFor(p.zone), p, Math.cos(ang) * 10, Math.sin(ang) * 10, 12);
     p.critUntil = now + 4000;
     io.emit('abilityFx', { type: 'dash', x: sx, y: sy, x2: p.x, y2: p.y, zone: p.zone });
+  } else if (p.cls === 'paladin') {
+    // Heiliger Ruf: heilt sich zu 25% und trifft Gegner im Umkreis mit hellem Schlag
+    p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.25));
+    areaDamage(p, p.x, p.y, 100, Math.round(p.dmg * 1.2 * pw));
+    io.emit('abilityFx', { type: 'nova', x: p.x, y: p.y, r: 100, zone: p.zone });
   }
 }
 
@@ -1575,11 +1595,11 @@ setInterval(() => {
 
 // ---------------- Statuseffekte, Dungeon-Bosse, Zufallsereignisse ----------------
 const EFFECT_MS = { slow: 3000, poison: 5000, burn: 4000 };
-const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher' };
+const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher', tier7: 'Obsidianfürst' };
 const TIER_BOSS_INTERVAL_MS = 8 * 60 * 1000;
 const tierBosses = {};
 
-function damagePlayer(target, dmg) {
+function damagePlayer(target, dmg, src) {
   if (target.dead) return;
   if (target.guardUntil && target.guardUntil > Date.now()) dmg = Math.round(dmg * 0.5);
   target.hp -= dmg;
@@ -1587,6 +1607,8 @@ function damagePlayer(target, dmg) {
   if (target.hp <= 0 && !target.dead) {
     target.dead = true;
     target.fx = {};
+    target.deadBy = src || null;
+    io.to(target.id).emit('died', { by: src || null });
     setTimeout(() => respawnPlayer(target), 3000);
   }
 }
@@ -1607,7 +1629,7 @@ function updateEffects(p, now) {
   p.dotAt = now;
   for (const k of ['poison', 'burn']) {
     const e = p.fx[k];
-    if (e && e.until > now) damagePlayer(p, e.dmg);
+    if (e && e.until > now) damagePlayer(p, e.dmg, k === 'poison' ? 'Gift' : 'Feuer');
   }
 }
 
@@ -1627,7 +1649,7 @@ function bossSlam(m, def) {
     for (const pid in players) {
       const p = players[pid];
       if (p.dead || p.zone !== zone) continue;
-      if (dist(p.x, p.y, cx, cy) < R + 10) damagePlayer(p, dmg);
+      if (dist(p.x, p.y, cx, cy) < R + 10) damagePlayer(p, dmg, m.name || 'dem Boss');
     }
   }, 1200);
 }
@@ -1768,6 +1790,7 @@ const BOSS_SPECIALS = {
   tier4: ['fan', 'rockfall', 'heal'],
   tier5: ['rockfall', 'fan', 'enrage', 'volley'],
   tier6: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
+  tier7: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
   bossroom: ['summon', 'fan', 'enrage', 'volley'],
   raid: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal']
 };
@@ -1775,6 +1798,7 @@ const BOSS_FAN = {
   tier4: { effect: 'slow', color: '#9be8ff' },
   tier5: { effect: 'burn', color: '#ff8a3c' },
   tier6: { effect: 'poison', color: '#8fff6b' },
+  tier7: { effect: 'burn', color: '#ff5d8a' },
   raid: { effect: 'burn', color: '#c77dff' }
 };
 const BOSS_ADD_MAX = 8;
@@ -1846,7 +1870,7 @@ function bossRockfall(m, def) {
       for (const pid in players) {
         const p = players[pid];
         if (p.dead || p.zone !== zone) continue;
-        if (dist(p.x, p.y, s.x, s.y) < R + 10) damagePlayer(p, dmg);
+        if (dist(p.x, p.y, s.x, s.y) < R + 10) damagePlayer(p, dmg, m.name || 'dem Boss');
       }
     }
   }, 1400);
@@ -2098,6 +2122,7 @@ io.on('connection', (socket) => {
     const def = CLASSES[p.cls];
     if (now - p.lastAttack < def.cooldown) return;
     p.lastAttack = now;
+    io.emit('swing', { id: p.id, zone: p.zone });
     revealSecrets(p);
 
     if (p.zone === 'arena') {
@@ -2759,6 +2784,11 @@ io.on('connection', (socket) => {
     saveAccountProgress(p);
   });
 
+  socket.on('setMagnet', (on) => {
+    const p = players[socket.id];
+    if (p) p.magnet = !!on;
+  });
+
   socket.on('useSpeedPotion', () => {
     const p = players[socket.id];
     if (!p || p.dead) return;
@@ -2861,6 +2891,7 @@ io.on('connection', (socket) => {
   socket.on('joinTown', () => {
     const p = players[socket.id];
     if (!p || p.dead || p.zone === 'town') return;
+    if (p.zone === 'raid' || p.zone === 'bossroom') return notice(p, 'In diesem Bereich geht das nicht.');
     p.zone = 'town'; p.x = TOWN_SPAWN.x; p.y = TOWN_SPAWN.y; p.hp = p.maxHp; p.fx = {};
   });
   socket.on('leaveTown', () => {
@@ -3029,7 +3060,7 @@ function tick() {
     for (const iid in items) {
       const it = items[iid];
       if ((it.zone || DEFAULT_TIER_KEY) !== p.zone) continue;
-      if (dist(p.x, p.y, it.x, it.y) < 20) {
+      if (dist(p.x, p.y, it.x, it.y) < (p.magnet ? 70 : 20)) {
         if (it.type === 'gold') { const g = Math.round(it.amount * goldBonus(p)); p.gold += g; p.stats.goldEarned += g; questProgress(p, 'gold', g); checkAchievements(p); }
         else if (it.type === 'potion') p.potions += 1;
         delete items[iid];
@@ -3073,7 +3104,7 @@ function tick() {
           m.lastAttack = now;
           if (def.dmg > 0) {
             const dmg = Math.round(def.dmg * (m.dmgMult || 1));
-            damagePlayer(target, dmg);
+            damagePlayer(target, dmg, m.name || MONSTER_TYPES[m.type].name || 'einem Monster');
             if (def.effect) applyEffect(target, def.effect, dmg);
           }
         }
@@ -3104,7 +3135,8 @@ function tick() {
           const pl = players[pid];
           if (pl.dead || pl.zone !== pr.zone) continue;
           if (dist(pr.x, pr.y, pl.x, pl.y) < 20) {
-            damagePlayer(pl, pr.dmg);
+            const srcM = monsters[pr.ownerId];
+            damagePlayer(pl, pr.dmg, srcM ? (srcM.name || (MONSTER_TYPES[srcM.type] && MONSTER_TYPES[srcM.type].name) || 'einem Monster') : 'einem Monster');
             if (pr.effect) applyEffect(pl, pr.effect, pr.dmg);
             hitSomething = true;
             break;

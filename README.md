@@ -99,6 +99,7 @@ bleibt die Website dort – du verlinkst nur auf den extern gehosteten Server.
 - **WASD / Pfeiltasten**: Bewegen
 - **Leertaste / Linksklick**: Angriff (Magier zielt Richtung Maus)
 - **E**: Heiltrank benutzen
+- **G**: Zur Stadt / zurück ins Dungeon
 - **Enter** (im Chat-Feld): Nachricht senden
 
 ## Mögliche Erweiterungen (später)
@@ -122,6 +123,7 @@ Im Menü unter "Dungeon wählen" kannst du jederzeit in niedrigere Dungeons wech
 | Eishöhlen | 25 | Höhle | Troll, Schleim, Skelett, Hexer, Säurespucker |
 | Vulkan-Festung | 35 | grosse Hallen | Troll, Dämon, Skelett, Hexer |
 | Der Abgrund | 50 | Labyrinth | Dämon, Troll, Hexer, Säurespucker |
+| Obsidian-Thron | 65 | grosse Hallen | Dämon, Troll, Hexer, Säurespucker |
 
 Die Werte (Level, Stärke, Monster) stehen oben in `server.js` in `DUNGEON_TIER_DEFS` und lassen sich dort anpassen.
 Die Minimap oben rechts zeigt nur den von dir erkundeten Bereich (Unerforschtes bleibt verborgen, bis du in die Nähe kommst) mit dir (weiss), anderen Spielern (blau), dem Boss (rot) und Truhen.
@@ -133,6 +135,7 @@ Die Minimap oben rechts zeigt nur den von dir erkundeten Bereich (Unerforschtes 
 | Krieger | Wirbelschlag | 1,6-facher Schaden an allen Gegnern im Umkreis (in der Arena auch an Spielern) | 8 s |
 | Magier | Feuernova | Ring aus 12 Geschossen | 10 s |
 | Schurke | Schattenschritt | Sprung in Zielrichtung, der nächste Nahkampfangriff ist ein sicherer Krit | 7 s |
+| Paladin | Heiliger Ruf | 25 % Heilung plus Heilschlag an allen Gegnern im Umkreis | 9 s |
 
 Werte und Abklingzeiten stehen in `server.js` bei `ABILITIES` und in `useAbility`.
 
@@ -229,6 +232,7 @@ Zusätzlich können Bosse je nach Dungeon einen radialen Geschosshagel (Volley) 
 | Eishöhlen | Frostkoloss | Fächer (verlangsamt), Steinschlag |
 | Vulkan-Festung | Magmatitan | Steinschlag, Fächer (Brand), Wutphase |
 | Der Abgrund | Abgrundherrscher | alles (Fächer vergiftet) |
+| Obsidian-Thron | Obsidianfürst | alles (Fächer Brand) |
 | Boss-Raum | Dungeon-Wächter | Verstärkung, Fächer, Wutphase |
 
 Unter 30% Leben tobt ein Boss: schneller, härter, Angriffe öfter. Seine Verstärkungen verschwinden mit ihm.
@@ -246,8 +250,8 @@ Wird im Browser erzeugt, ohne Dateien: Jeder Dungeon, die Arena und der Boss-Rau
 
 ## Update: Stadt, Tresore, Wiedergeburt, Raid & Saison
 
-**Hub-Stadt** (Menü → 🏘️ Zur Stadt): sicherer Ort mit Heilbrunnen und fünf NPCs (Taste F oder Button):
-Händler (Shop), Schmied (Ausrüstung/Verbessern), Questgeberin, Herold (Raid & Saison), Meister der Wiedergeburt.
+**Hub-Stadt** (Menü → 🏘️ Zur Stadt oder Taste G): sicherer Ort mit Heilbrunnen und sechs NPCs (Taste F oder Button):
+Händler (Shop), Schmied (Ausrüstung/Verbessern), Questgeberin, Herold (Raid & Saison), Meister der Wiedergeburt, Werkstatt (Handwerk).
 
 **Dungeon-Mechaniken** (in jeder Stufe):
 - Stachelfallen: 0,6 s Warnblinken, dann 0,8 s aktiv, 7 % deines max. Lebens als Schaden.
@@ -255,7 +259,7 @@ Händler (Shop), Schmied (Ausrüstung/Verbessern), Questgeberin, Herold (Raid & 
 - Geheimräume: eine Wand, die bei einem Angriff in der Nähe nachgibt (feine Risse, wenn man nah dran ist). Zwei Truhen drin, Schließung nach 5 Min.
 
 **Zweite Fähigkeit (Taste T, auf dem Handy eigener Button):**
-Krieger *Bollwerk* (5 s halber Schaden + 15 % Heilung), Magier *Meteor* (Einschlag nach 0,9 s), Schurke *Klingentanz* (3 Schläge rundherum).
+Krieger *Bollwerk* (5 s halber Schaden + 15 % Heilung), Magier *Meteor* (Einschlag nach 0,9 s), Schurke *Klingentanz* (3 Schläge rundherum), Paladin *Lichtwall* (4 s halber Schaden + 20 % Heilung).
 
 **Wiedergeburt** (Charakter → Aufstieg, ab Level 50, max. Stufe 10): Level startet bei 1, dauerhaft +6 % Leben/Schaden und +10 % XP je Stufe, dazu Gold, Essenz und eine legendäre Ausrüstung. Dort auch der **Klassenwechsel** (750 Gold).
 
