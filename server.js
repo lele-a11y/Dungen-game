@@ -516,9 +516,9 @@ const SHOP_ITEMS = {
   hp: { label: '🛡️ Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
   speed: { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
 };
-// Trinkgeld-Links: hier die eigenen URLs eintragen (z.B. PayPal.Me oder Ko-fi).
-// Solange leer, zeigt der Client "demnächst" an.
-const DONATE_LINKS = { paypal: '', kofi: '' };
+// Trinkgeld-Link: hier die eigene Ko-fi-URL eintragen (z.B. 'https://ko-fi.com/name').
+// Solange leer, wird die Trinkgeld-Sektion im Shop ausgeblendet.
+const DONATE_LINKS = { kofi: '' };
 const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert' };
 function shopCost(itemKey, currentCount) {
   const def = SHOP_ITEMS[itemKey];

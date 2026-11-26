@@ -447,8 +447,7 @@
       <p style="margin:6px 0;"><b>Leo's Dungeon RPG</b> · v1.0<br><span class="muted">Ein Echtzeit-Multiplayer-Dungeon-RPG.</span></p>
       <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex</p>
       <div style="display:flex; gap:8px; margin-top:10px;">
-        <button class="menuOption" id="miscPaypal" style="flex:1;">💳 PayPal</button>
-        <button class="menuOption" id="miscKofi" style="flex:1;">☕ Ko-fi</button>
+        <button class="menuOption" id="miscKofi" style="flex:1;">☕ Trinkgeld</button>
         <button class="menuOption" id="miscClose" style="flex:1;">Schließen</button>
       </div>
     </div>
@@ -644,7 +643,7 @@ if (isTouchDevice) document.body.classList.add('touch-active');
 
 let SHOP_ITEMS = {};
 const SHOP_CATS = { verbrauch: '🧪 Verbrauch', upgrades: '⚔️ Upgrades', echtgeld: '💰 Echtgeld (Trinkgeld)' };
-let DONATE = { paypal: '', kofi: '' };
+let DONATE = { kofi: '' };
 function shopCostClient(key, count) {
   const d = SHOP_ITEMS[key];
   return d.baseCost + d.scale * count;
@@ -689,14 +688,16 @@ function renderShop() {
       box.appendChild(row);
     }
   }
-  addHeader(SHOP_CATS.echtgeld);
-  for (const [id, label] of [['paypal', '💳 PayPal'], ['kofi', '☕ Ko-fi']]) {
-    const row = document.createElement('div');
-    row.className = 'shopItem';
-    const url = DONATE[id];
-    row.innerHTML = `<div class="info">${label}<div class="cnt">Freiwillig · hilft bei Serverkosten</div></div>
-      <button data-donate="${id}" ${url ? '' : 'disabled'}>${url ? 'Öffnen' : 'bald'}</button>`;
-    box.appendChild(row);
+  const donateRows = [['kofi', '☕ Trinkgeld']].filter(([id]) => DONATE[id]);
+  if (donateRows.length) {
+    addHeader(SHOP_CATS.echtgeld);
+    for (const [id, label] of donateRows) {
+      const row = document.createElement('div');
+      row.className = 'shopItem';
+      row.innerHTML = `<div class="info">${label}<div class="cnt">Freiwillig · hilft bei Serverkosten</div></div>
+        <button data-donate="${id}">Öffnen</button>`;
+      box.appendChild(row);
+    }
   }
   box.querySelectorAll('button[data-key]').forEach(btn => {
     btn.addEventListener('click', () => socket.emit('buyItem', { type: btn.dataset.key }));
@@ -1796,12 +1797,10 @@ function toggleMisc(force) {
   const el = document.getElementById('miscPanel');
   const open = (typeof force === 'boolean') ? force : el.style.display === 'none';
   el.style.display = open ? 'block' : 'none';
-  document.getElementById('miscPaypal').disabled = !DONATE.paypal;
   document.getElementById('miscKofi').disabled = !DONATE.kofi;
 }
 document.getElementById('menuOptionSonstiges').addEventListener('click', () => { toggleMenu(false); toggleMisc(true); });
 document.getElementById('miscClose').addEventListener('click', () => toggleMisc(false));
-document.getElementById('miscPaypal').addEventListener('click', () => { if (DONATE.paypal) window.open(DONATE.paypal, '_blank', 'noopener'); });
 document.getElementById('miscKofi').addEventListener('click', () => { if (DONATE.kofi) window.open(DONATE.kofi, '_blank', 'noopener'); });
 const smooth = new Map();      // weiche Bewegung: Schluessel -> { x, y, fx, fy, mv, seen }
 const particles = [];
