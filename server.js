@@ -1765,6 +1765,7 @@ const EFFECT_MS = { slow: 3000, poison: 5000, burn: 4000 };
 const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher', tier7: 'Obsidianfürst', tier8: 'Aschenfürst' };
 const TIER_BOSS_INTERVAL_MS = 8 * 60 * 1000;
 const tierBosses = {};
+const tierBossNextAt = {};
 
 function damagePlayer(target, dmg, src) {
   if (target.dead) return;
@@ -1835,6 +1836,7 @@ function spawnTierBoss(zone) {
     hp, maxHp: hp, x, y, lastAttack: 0, targetId: null, homeX: x, homeY: y
   };
   tierBosses[zone] = id;
+  tierBossNextAt[zone] = Date.now() + TIER_BOSS_INTERVAL_MS;
   announceTo(p => p.level >= tier.minLevel, `👑 ${name} ist in ${tier.name} erschienen!`);
 }
 
@@ -1909,6 +1911,7 @@ function randomEvent() {
 })();
 DUNGEON_TIER_DEFS.forEach((def, i) => {
   setTimeout(() => {
+    tierBossNextAt[def.key] = Date.now() + TIER_BOSS_INTERVAL_MS;
     spawnTierBoss(def.key);
     setInterval(() => spawnTierBoss(def.key), TIER_BOSS_INTERVAL_MS);
   }, 60000 + i * 80000);
@@ -3535,7 +3538,8 @@ function broadcastState() {
     xpRemaining: Math.max(0, xpEventUntil - now),
     bossAlive: !!(bossId && monsters[bossId]),
     raid: raid.active && monsters[raid.bossId] ? { hp: Math.round(monsters[raid.bossId].hp), maxHp: monsters[raid.bossId].maxHp, endsAt: raid.endsAt, joined: raid.joined.size } : null,
-    raidNextAt: raid.nextAt
+    raidNextAt: raid.nextAt,
+    tierBossNext: Object.fromEntries(Object.keys(tierBossNextAt).map(z => [z, { nextAt: tierBossNextAt[z], alive: !!(tierBosses[z] && monsters[tierBosses[z]]) }]))
   };
   const empty = { monsters: [], items: [], chests: [], projectiles: [] };
   for (const id in players) {

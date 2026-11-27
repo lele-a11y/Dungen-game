@@ -1419,8 +1419,17 @@ function renderTiersPanel() {
     const current = me.zone === key;
     const rec = me.bossBest && me.bossBest[key];
     const recTxt = rec ? ` · ⏱️ ${Math.floor(rec / 60)}:${String(rec % 60).padStart(2, '0')}` : '';
+    const tb = (world.events.tierBossNext || {})[key];
+    let bossTxt = '';
+    if (tb) {
+      if (tb.alive) bossTxt = ' · 👑 Boss aktiv!';
+      else {
+        const ms = Math.max(0, (tb.nextAt || 0) - (Date.now() + serverOffset));
+        bossTxt = ` · ⏳ Boss in ${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+      }
+    }
     return `<div class="tierRow ${current ? 'current' : ''} ${locked ? 'locked' : ''}">
-      <div><div>🏰 ${t.name}</div><div class="tierMeta">${locked ? '🔒 ab Level ' + t.minLevel : 'ab Level ' + t.minLevel}${current ? ' · du bist hier' : ''}${recTxt}${t.monsters && t.monsters.length ? '<br>👾 ' + t.monsters.join(', ') : ''}</div></div>
+      <div><div>🏰 ${t.name}</div><div class="tierMeta">${locked ? '🔒 ab Level ' + t.minLevel : 'ab Level ' + t.minLevel}${current ? ' · du bist hier' : ''}${recTxt}${bossTxt}${t.monsters && t.monsters.length ? '<br>👾 ' + t.monsters.join(', ') : ''}</div></div>
       <button data-tier="${key}" ${locked || current ? 'disabled' : ''}>Betreten</button>
     </div>`;
   }).join('');
