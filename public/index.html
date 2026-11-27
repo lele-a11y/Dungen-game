@@ -472,7 +472,8 @@
     <h2 style="margin:0 0 10px; color:var(--accent); font-size:18px; text-align:center;">🧭 Sonstiges</h2>
     <div style="font-size:13px; line-height:1.7;">
       <p style="margin:6px 0;"><b>Leo's Dungeon RPG</b> · v1.0<br><span class="muted">Ein Echtzeit-Multiplayer-Dungeon-RPG.</span></p>
-      <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex /gg /hello · /stats für Statistiken</p>
+      <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex /gg /hello · /stats für Statistiken · /roll /flip</p>
+      <p style="margin:6px 0;" id="miscTip" class="muted"></p>
       <div style="display:flex; gap:8px; margin-top:10px;">
         <button class="menuOption" id="miscKofi" style="flex:1;">☕ Trinkgeld</button>
         <button class="menuOption" id="miscClose" style="flex:1;">Schließen</button>
@@ -2001,10 +2002,26 @@ document.getElementById('menuOptionMagnet').addEventListener('click', () => {
   updateMagnetBtn();
 });
 updateMagnetBtn();
+const MISC_TIPS = [
+  'Tipp: Das Depot in der Stadt bewahrt Items & Ressourcen auch nach dem Logout.',
+  'Tipp: Die Tagesquest gibt 1,5x Belohnung – schau täglich vorbei!',
+  'Tipp: Im Shop wechselt das Tagesangebot jeden Tag um Mitternacht.',
+  'Tipp: Gildenmitglieder in der Nähe geben +5% XP – grindet zusammen!',
+  'Tipp: Der Gaukler Finn in der Stadt schenkt zufällige Buffs (5 Min. Cooldown).',
+  'Tipp: /stats im Chat zeigt deine Statistiken auf einen Blick.',
+  'Tipp: Neue Dungeon-Stufen schaltest du automatisch per Level frei.',
+  'Tipp: Die Minimap zeigt nur erkundetes Terrain – erkunde alles!',
+  'Tipp: Boss-Rekorde pro Dungeon findest du im „Dungeon wählen"-Panel.',
+  'Tipp: Mit /g schreibst du nur an deine Gruppe, mit /gc an die Gilde.'
+];
 function toggleMisc(force) {
   const el = document.getElementById('miscPanel');
   const open = (typeof force === 'boolean') ? force : el.style.display === 'none';
   el.style.display = open ? 'block' : 'none';
+  if (open) {
+    const day = Math.floor(Date.now() / 86400000);
+    document.getElementById('miscTip').textContent = '💡 ' + MISC_TIPS[day % MISC_TIPS.length];
+  }
   document.getElementById('miscKofi').disabled = !DONATE.kofi;
 }
 document.getElementById('menuOptionSonstiges').addEventListener('click', () => { toggleMenu(false); toggleMisc(true); });
