@@ -398,7 +398,10 @@ const DUNGEON_TIER_DEFS = [
     theme: { wall: '#3a2350', wallTop: '#251538', floorA: '#150d20', floorB: '#1a1128' } },
   { key: 'tier7', name: 'Obsidian-Thron', minLevel: 65, gen: { type: 'rooms', gridW: 16, gridH: 4, cellSize: 15 }, monsterMult: 11.5, dmgMult: 5.8, lootMult: 5.8,
     pool: [['obsidianKnight', 3], ['voidStalker', 3], ['doomHerald', 3], ['demon', 2], ['caster', 2], ['spitter', 2]],
-    theme: { wall: '#23232c', wallTop: '#121218', floorA: '#0c0c11', floorB: '#101017' } }
+    theme: { wall: '#23232c', wallTop: '#121218', floorA: '#0c0c11', floorB: '#101017' } },
+  { key: 'tier8', name: 'Aschenthron', minLevel: 80, gen: { type: 'rooms', gridW: 16, gridH: 4, cellSize: 15 }, monsterMult: 15, dmgMult: 6.5, lootMult: 6.5,
+    pool: [['sensenmann', 3], ['obsidianKnight', 3], ['doomHerald', 3], ['voidStalker', 2], ['demon', 2]],
+    theme: { wall: '#2e1a1a', wallTop: '#180d0d', floorA: '#120a0a', floorB: '#170d0d' } }
 ];
 const DUNGEON_TIERS = {};
 const FEATURES = {};   // zone -> { vaults, secrets, trapMap }
@@ -552,6 +555,7 @@ const MONSTER_TYPES = {
   archer:  { name: 'Bogenschütze', hp: 45, dmg: 11, speed: 0.95, xp: 22, range: 260, cooldown: 1700, color: '#c9a66b', radius: 11, ranged: { speed: 6, life: 60, color: '#f1e3b0' } },
   caster:  { name: 'Hexer', hp: 60, dmg: 17, speed: 0.8, xp: 38, range: 300, cooldown: 2300, color: '#9b4dca', radius: 12, effect: 'burn', ranged: { speed: 4.5, life: 80, color: '#ff8a3c' } },
   spitter: { name: 'Säurespucker', hp: 70, dmg: 13, speed: 0.7, xp: 30, range: 240, cooldown: 2000, color: '#7bd05a', radius: 13, effect: 'poison', ranged: { speed: 4, life: 75, color: '#8fff6b' } },
+  sensenmann:  { name: 'Sensenmann', hp: 300, dmg: 52, speed: 1.4, xp: 200, range: 34, cooldown: 900, color: '#1c1c26', radius: 15, effect: 'slow' },
   obsidianKnight: { name: 'Obsidianritter', hp: 340, dmg: 46, speed: 1.0, xp: 170, range: 36, cooldown: 1100, color: '#3d3d52', radius: 17, effect: 'slow' },
   voidStalker:   { name: 'Nichtshetzer', hp: 150, dmg: 30, speed: 1.9, xp: 120, range: 30, cooldown: 800, color: '#5a2a7a', radius: 12, effect: 'poison' },
   doomHerald:    { name: 'Unheilbote', hp: 210, dmg: 38, speed: 0.9, xp: 155, range: 290, cooldown: 2100, color: '#8a1f1f', radius: 14, effect: 'burn', ranged: { speed: 5, life: 85, color: '#ff4d4d' } },
@@ -1212,7 +1216,7 @@ function useAbility(p) {
 }
 
 // ---------------- Quests ----------------
-const MONSTER_NAMES_PL = { goblin: 'Goblins', ork: 'Orks', slime: 'Schleime', bat: 'Fledermäuse', skeleton: 'Skelette', troll: 'Trolle', demon: 'Dämonen', archer: 'Bogenschützen', caster: 'Hexer', spitter: 'Säurespucker', obsidianKnight: 'Obsidianritter', voidStalker: 'Nichtshetzer', doomHerald: 'Unheilboten' };
+const MONSTER_NAMES_PL = { goblin: 'Goblins', ork: 'Orks', slime: 'Schleime', bat: 'Fledermäuse', skeleton: 'Skelette', troll: 'Trolle', demon: 'Dämonen', archer: 'Bogenschützen', caster: 'Hexer', spitter: 'Säurespucker', obsidianKnight: 'Obsidianritter', voidStalker: 'Nichtshetzer', doomHerald: 'Unheilboten', sensenmann: 'Sensenmänner' };
 const QUEST_TYPES = ['kill', 'killType', 'chest', 'gold', 'boss', 'pvp'];
 const QUEST_COUNT = 3;
 
@@ -1758,7 +1762,7 @@ setInterval(() => {
 
 // ---------------- Statuseffekte, Dungeon-Bosse, Zufallsereignisse ----------------
 const EFFECT_MS = { slow: 3000, poison: 5000, burn: 4000 };
-const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher', tier7: 'Obsidianfürst' };
+const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher', tier7: 'Obsidianfürst', tier8: 'Aschenfürst' };
 const TIER_BOSS_INTERVAL_MS = 8 * 60 * 1000;
 const tierBosses = {};
 
@@ -1954,6 +1958,7 @@ const BOSS_SPECIALS = {
   tier5: ['rockfall', 'fan', 'enrage', 'volley'],
   tier6: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
   tier7: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
+  tier8: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
   bossroom: ['summon', 'fan', 'enrage', 'volley'],
   raid: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal']
 };
@@ -1962,6 +1967,7 @@ const BOSS_FAN = {
   tier5: { effect: 'burn', color: '#ff8a3c' },
   tier6: { effect: 'poison', color: '#8fff6b' },
   tier7: { effect: 'burn', color: '#ff5d8a' },
+  tier8: { effect: 'burn', color: '#ffb03c' },
   raid: { effect: 'burn', color: '#c77dff' }
 };
 const BOSS_ADD_MAX = 8;
@@ -2086,17 +2092,27 @@ const GUILD_COST = 500;
 function guildLevel(g) { return Math.min(10, Math.floor(Math.sqrt(Math.max(0, g.xp || 0) / 100))); }
 const guildCache = new Map();    // key -> { key, name, tag, leader, members:[username] }
 const guildInvites = {};         // Ziel-Socket -> { fromId, guild, expires }
+const GUILD_BANK_MAX = 100;
+
+function guildBank(g) {
+  if (!g.bank || typeof g.bank !== 'object') g.bank = { items: [], gold: 0 };
+  if (!Array.isArray(g.bank.items)) g.bank.items = [];
+  g.bank.items = g.bank.items.map(sanitizeItem).filter(Boolean).slice(0, GUILD_BANK_MAX);
+  g.bank.gold = Math.max(0, Number(g.bank.gold) || 0);
+  return g.bank;
+}
 
 async function loadGuild(key) {
   if (!key) return null;
-  if (guildCache.has(key)) return guildCache.get(key);
+  if (guildCache.has(key)) { const c = guildCache.get(key); guildBank(c); return c; }
   if (!guildsCol) return null;
   const g = await guildsCol.findOne({ key });
-  if (g) guildCache.set(key, g);
+  if (g) { guildBank(g); guildCache.set(key, g); }
   return g || null;
 }
 async function saveGuild(g) {
-  if (guildsCol) await guildsCol.updateOne({ key: g.key }, { $set: { name: g.name, tag: g.tag, leader: g.leader, members: g.members, xp: g.xp || 0, level: guildLevel(g) } });
+  const b = guildBank(g);
+  if (guildsCol) await guildsCol.updateOne({ key: g.key }, { $set: { name: g.name, tag: g.tag, leader: g.leader, members: g.members, xp: g.xp || 0, level: guildLevel(g), bank: { items: b.items, gold: b.gold } } });
 }
 function guildOnline(g) { return g.members.map(u => findOnline(u)).filter(Boolean); }
 function sendGuild(p) {
@@ -3074,7 +3090,74 @@ io.on('connection', (socket) => {
     if (!p || !msg) return;
     if (!chatAllowed(p)) return;
     const text = String(msg).slice(0, 80);
+    if (text === '/roll') { io.emit('chat', { name: p.name, text: 'würfelt ' + (1 + Math.floor(Math.random() * 100)) + '!' }); return; }
     io.emit('chat', { name: p.name, text });
+  });
+
+  // ---- Gildenbank: gemeinsames Lager fuer alle Gildenmitglieder ----
+  socket.on('guildBankOpen', async () => {
+    const p = players[socket.id];
+    if (!p || !p.guild) return;
+    const g = await loadGuild(p.guild);
+    if (!g) return;
+    const b = guildBank(g);
+    socket.emit('guildBank', { items: b.items.map(withEff), gold: b.gold, max: GUILD_BANK_MAX });
+  });
+
+  socket.on('guildBankMove', async (d) => {
+    const p = players[socket.id];
+    if (!p || !p.guild) return;
+    const dir = d && d.dir;
+    if (dir !== 'in' && dir !== 'out') return;
+    const g = await loadGuild(p.guild);
+    if (!g) return;
+    const b = guildBank(g);
+    if (d.all) {
+      const from = dir === 'in' ? p.inventory : b.items;
+      const to = dir === 'in' ? b.items : p.inventory;
+      const cap = dir === 'in' ? GUILD_BANK_MAX : INVENTORY_MAX;
+      let moved = 0;
+      while (from.length && to.length < cap) { to.push(from.shift()); moved++; }
+      if (!moved) return notice(p, dir === 'in' ? 'Gildenbank ist voll.' : 'Inventar ist voll.');
+      sendProfile(p);
+      socket.emit('guildBank', { items: b.items.map(withEff), gold: b.gold, max: GUILD_BANK_MAX });
+      saveGuild(g);
+      notice(p, `🏦 ${moved} Gegenstand${moved === 1 ? '' : 'e'} ${dir === 'in' ? 'eingelagert' : 'entnommen'}.`);
+      return;
+    }
+    const from = dir === 'in' ? p.inventory : b.items;
+    const to = dir === 'in' ? b.items : p.inventory;
+    const cap = dir === 'in' ? GUILD_BANK_MAX : INVENTORY_MAX;
+    const idx = from.findIndex(it => it.id === (d && d.itemId));
+    if (idx < 0) return;
+    if (to.length >= cap) return notice(p, dir === 'in' ? 'Gildenbank ist voll.' : 'Inventar ist voll.');
+    to.push(from.splice(idx, 1)[0]);
+    sendProfile(p);
+    socket.emit('guildBank', { items: b.items.map(withEff), gold: b.gold, max: GUILD_BANK_MAX });
+    saveGuild(g);
+  });
+
+  socket.on('guildBankGold', async (d) => {
+    const p = players[socket.id];
+    if (!p || !p.guild) return;
+    const dir = d && d.dir;
+    if (dir !== 'in' && dir !== 'out') return;
+    const g = await loadGuild(p.guild);
+    if (!g) return;
+    const b = guildBank(g);
+    const amount = d.all ? Infinity : Math.max(1, Math.min(1000000, Number(d.amount) || 0));
+    if (!isFinite(amount)) {
+      if (dir === 'in') { b.gold += p.gold; p.gold = 0; }
+      else { p.gold += b.gold; b.gold = 0; }
+    } else {
+      const moved = Math.min(amount, dir === 'in' ? p.gold : b.gold);
+      if (moved <= 0) return;
+      if (dir === 'in') { p.gold -= moved; b.gold += moved; }
+      else { b.gold -= moved; p.gold += moved; }
+    }
+    sendProfile(p);
+    socket.emit('guildBank', { items: b.items.map(withEff), gold: b.gold, max: GUILD_BANK_MAX });
+    saveGuild(g);
   });
 
   // ---- Admin-Aktionen: serverseitig IMMER erneut gegen isAdmin geprueft ----

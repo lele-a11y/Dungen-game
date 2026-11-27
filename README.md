@@ -96,6 +96,7 @@ Im Menü unter "Dungeon wählen" kannst du jederzeit in niedrigere Dungeons wech
 | Vulkan-Festung | 35 | grosse Hallen | Troll, Dämon, Skelett, Hexer |
 | Der Abgrund | 50 | Labyrinth | Dämon, Troll, Hexer, Säurespucker |
 | Obsidian-Thron | 65 | grosse Hallen | Obsidianritter, Nichtshetzer, Unheilbote, Dämon, Hexer, Säurespucker |
+| Aschenthron | 80 | grosse Hallen | Sensenmann, Obsidianritter, Unheilbote, Nichtshetzer, Dämon |
 
 Die Werte (Level, Stärke, Monster) stehen oben in `server.js` in `DUNGEON_TIER_DEFS` und lassen sich dort anpassen.
 Die Minimap oben rechts zeigt nur den von dir erkundeten Bereich (Unerforschtes bleibt verborgen, bis du in die Nähe kommst) mit dir (weiss), anderen Spielern (blau), dem Boss (rot) und Truhen.
@@ -143,6 +144,7 @@ sich direkt aus dem Depot verkaufen. So geht keine Beute beim Dungeon-Hopping ve
 - **Gruppen** bis 4 Spieler: Mitglieder in der Nähe bekommen 50% XP und Quest-Fortschritt, eigener Chat mit `/g Text`.
 - **Freundesliste** (bis 50) mit Online-Anzeige, Gruppeneinladung und Teleport-Anfrage.
 - **Handel:** Im Reiter Ausrüstung bei einem Gegenstand auf "Handeln" klicken. Der andere sieht Werte und Preis und muss zustimmen.
+- **Gildenbank 🏦:** Gemeinsames Lager pro Gilde (bis 100 Gegenstände + Gold), für alle Mitglieder. Öffnen über das Gilden-Panel (Soziales → Gilde → Bank).
 - Pro Account ist nur eine Sitzung gleichzeitig möglich, eine zweite Anmeldung beendet die erste. Das verhindert Gegenstands-Duplikate.
 
 ## Gefahren und Ereignisse
