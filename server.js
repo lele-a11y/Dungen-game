@@ -22,6 +22,7 @@ const path = require('path');
 const { Server } = require('socket.io');
 const { MongoClient } = require('mongodb');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -2210,6 +2211,7 @@ io.on('connection', (socket) => {
       const username = (data && data.username ? String(data.username) : '').trim().toLowerCase().slice(0, 20);
       const password = data && data.password ? String(data.password) : '';
       const name = (data && data.name ? String(data.name) : username).trim().slice(0, 16) || 'Held';
+      const sessionToken = data && data.token ? String(data.token).slice(0, 64) : null;
       const key = clientKey(socket);
       const blocked = authBlockedSeconds(key);
       if (blocked) return socket.emit('authError', `Zu viele Fehlversuche. Bitte warte ${blocked} Sekunden.`);
@@ -2217,7 +2219,7 @@ io.on('connection', (socket) => {
       if (!username || username.length < 3) {
         return socket.emit('authError', 'Benutzername muss mind. 3 Zeichen haben.');
       }
-      if (!password || password.length < 4) {
+      if (!sessionToken && (!password || password.length < 4)) {
         return socket.emit('authError', 'Passwort muss mind. 4 Zeichen haben.');
       }
       if (!accountsCol) {
@@ -2234,8 +2236,12 @@ io.on('connection', (socket) => {
         account = await createAccount(username, hash, classKey);
       } else {
         if (!account) { authFail(key); return socket.emit('authError', 'Diesen Account gibt es nicht. Bitte zuerst registrieren.'); }
-        const ok = await bcrypt.compare(password, account.passwordHash);
-        if (!ok) { authFail(key); return socket.emit('authError', 'Falsches Passwort.'); }
+        if (sessionToken) {
+          if (account.sessionToken !== sessionToken) { authFail(key); return socket.emit('authError', 'Deine Sitzung ist abgelaufen. Bitte neu einloggen.'); }
+        } else {
+          const ok = await bcrypt.compare(password, account.passwordHash);
+          if (!ok) { authFail(key); return socket.emit('authError', 'Falsches Passwort.'); }
+        }
         authOk(key);
         if (account.banned) return socket.emit('authError', 'Dieser Account ist gesperrt.');
         // Nur eine Sitzung pro Account: die alte wird gespeichert und beendet (verhindert Item-Duplikate)
@@ -2250,13 +2256,18 @@ io.on('connection', (socket) => {
         }
       }
 
+      // Session-Token fuer "angemeldet bleiben" (Client speichert ihn lokal)
+      const newSessionToken = crypto.randomBytes(24).toString('hex');
+      const chosenName = (data && data.name && String(data.name).trim()) ? name : (account.displayName || username);
+      await accountsCol.updateOne({ username }, { $set: { sessionToken: newSessionToken, displayName: chosenName } });
+
       const stats = statsForLevel(account.cls, account.level);
       const loginTier = tierForLevel(account.level);
       const loginSpawn = randomTierSpawn(loginTier);
       players[socket.id] = {
         id: socket.id,
         username,
-        name: name || username,
+        name: chosenName,
         cls: account.cls,
         zone: loginTier,
         x: loginSpawn.x,
@@ -2304,6 +2315,7 @@ io.on('connection', (socket) => {
       }
       socket.emit('init', {
         you: socket.id,
+        session: newSessionToken,
         dungeonTiers: dungeonTiersPayload,
         abilities: ABILITIES,
         abilities2: ABILITIES2,
@@ -2886,6 +2898,16 @@ io.on('connection', (socket) => {
     else if (kind === 'announce') { const text = String((d && d.text) || '').slice(0, 140).trim(); if (text) io.emit('announcement', `📢 ${text}`); }
   });
 
+  socket.on('logout', async () => {
+    const p = players[socket.id];
+    if (!p) return;
+    if (accountsCol) await accountsCol.updateOne({ username: p.username }, { $unset: { sessionToken: '' } });
+    await saveAccountProgress(p);
+    delete players[socket.id];
+    leaveParty(p);
+    disconnectSocket(socket.id);
+  });
+
   socket.on('guildInfo', () => { const p = players[socket.id]; if (p) sendGuild(p); });
 
   socket.on('guildCreate', async (d) => {
@@ -3009,7 +3031,7 @@ io.on('connection', (socket) => {
     const key = data && data.tier;
     const tierDef = DUNGEON_TIERS[key];
     if (!tierDef) return;
-    if (p.level < tierDef.minLevel) {
+    if (p.level < tierDef.minLevel && p.role !== 'owner') {
       return socket.emit('shopError', `Benötigt Level ${tierDef.minLevel} (du bist Level ${p.level}).`);
     }
     p.zone = key;

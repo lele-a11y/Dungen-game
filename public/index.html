@@ -466,6 +466,7 @@
     <button class="menuOption" id="menuOptionMagnet">🧲 Items-Magnet: aus</button>
     <button class="menuOption" id="menuOptionClose">▶️ Weiterspielen</button>
     <button class="menuOption" id="menuOptionLeave">🚪 Spiel verlassen</button>
+    <button class="menuOption" id="menuOptionLogout">👤 Abmelden</button>
   </div>
 
   <div id="miscPanel" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:40; background:#12161fee; border:1px solid var(--accent); border-radius:14px; padding:18px 22px; min-width:280px; max-width:92vw; color:#fff;">
@@ -909,6 +910,13 @@ document.getElementById('menuOptionPlayers').addEventListener('click', () => { t
 document.getElementById('menuOptionAdmin').addEventListener('click', () => { toggleMenu(false); toggleAdminPanel(true); });
 document.getElementById('menuOptionTown').addEventListener('click', () => { toggleMenu(false); const m = world.players.find(q => q.id === myId); socket.emit(m && m.zone === 'town' ? 'leaveTown' : 'joinTown'); });
 document.getElementById('menuOptionRaid').addEventListener('click', () => { toggleMenu(false); openBig('raid', 'raid'); });
+document.getElementById('menuOptionLogout').addEventListener('click', () => {
+  if (confirm('Wirklich abmelden? Beim nächsten Besuch musst du dich neu einloggen.')) {
+    clearSession();
+    if (socket) socket.emit('logout');
+    setTimeout(() => location.reload(), 300);
+  }
+});
 document.getElementById('menuOptionLeave').addEventListener('click', () => {
   if (confirm('Spiel wirklich verlassen?')) {
     if (socket) socket.disconnect();
@@ -1432,7 +1440,7 @@ function renderTiersPanel() {
   const list = document.getElementById('tiersList');
   list.innerHTML = Object.keys(DUNGEON_TIERS).map(key => {
     const t = DUNGEON_TIERS[key];
-    const locked = me.level < t.minLevel;
+    const locked = me.level < t.minLevel && me.role !== 'owner';
     const current = me.zone === key;
     const rec = me.bossBest && me.bossBest[key];
     const recTxt = rec ? ` · ⏱️ ${Math.floor(rec / 60)}:${String(rec % 60).padStart(2, '0')}` : '';
@@ -1626,18 +1634,31 @@ document.querySelectorAll('.classBtn').forEach(btn => {
 });
 
 document.getElementById('playBtn').addEventListener('click', startGame);
+
+// Angemeldet bleiben: gespeicherte Sitzung automatisch nutzen
+try {
+  const saved = JSON.parse(localStorage.getItem('dungeonSession') || 'null');
+  if (saved && saved.u && saved.t) {
+    document.getElementById('userInput').value = saved.u;
+    window.__autoAuth = { username: saved.u, token: saved.t };
+    startGame();
+  }
+} catch (e) {}
 document.getElementById('passInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') startGame(); });
 
 let authSocket = null;
+function clearSession() { try { localStorage.removeItem('dungeonSession'); } catch (e) {} }
 function startGame() {
   const username = document.getElementById('userInput').value.trim();
-  const password = document.getElementById('passInput').value;
+  const auto = window.__autoAuth;
+  const useToken = !!(auto && auto.username === username && auto.token);
+  const password = useToken ? '' : document.getElementById('passInput').value;
   const name = document.getElementById('nameInput').value.trim() || username;
   const msgBox = document.getElementById('authMsg');
-  msgBox.textContent = '';
+  msgBox.textContent = useToken ? 'Sitzung wird wiederhergestellt...' : '';
 
   if (!username || username.length < 3) { msgBox.textContent = 'Benutzername braucht mind. 3 Zeichen.'; return; }
-  if (!password || password.length < 4) { msgBox.textContent = 'Passwort braucht mind. 4 Zeichen.'; return; }
+  if (!useToken && (!password || password.length < 4)) { msgBox.textContent = 'Passwort braucht mind. 4 Zeichen.'; return; }
 
   document.getElementById('playBtn').disabled = true;
 
@@ -1645,10 +1666,12 @@ function startGame() {
   socket.on('authError', (msg) => {
     msgBox.textContent = msg;
     document.getElementById('playBtn').disabled = false;
+    if (useToken) { clearSession(); window.__autoAuth = null; }
   });
   socket.on('init', (data) => {
     myId = data.you; DUNGEON_TIERS = data.dungeonTiers || {}; MONSTER_DEFS = data.monsterDefs || {}; ABILITIES = data.abilities || {}; DEFS = data.defs || {}; ARENA_MAP = data.arenaMap; BOSSROOM_MAP = data.bossRoomMap; TILE = data.tile; CLASSES = data.classes;
     TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {}; SHOP_ITEMS = data.shop || {}; DEAL = data.deal || null;
+    if (data.session && username) { try { localStorage.setItem('dungeonSession', JSON.stringify({ u: username, t: data.session })); } catch (e) {} }
     isAdmin = !!data.isAdmin;
     if (data.donate) DONATE = data.donate;
     if (magnetOn) socket.emit('setMagnet', true);
@@ -1731,7 +1754,7 @@ function startGame() {
   socket.on('guildInvited', (r) => showPrompt('guild', '🏰 ' + r.fromName + ' lädt dich in die Gilde „' + r.guildName + '“ [' + r.tag + '] ein', () => socket.emit('guildAccept'), () => socket.emit('guildDecline'), 45000));
   socket.on('partyInvited', (r) => showPrompt('party', '👥 ' + r.fromName + ' lädt dich in eine Gruppe ein', () => socket.emit('partyAccept'), () => socket.emit('partyDecline'), 30000));
   socket.on('tradeIncoming', (r) => showPrompt('trade', '🤝 ' + r.fromName + ' bietet „' + r.item.name + '“ (' + DEFS.rarities[r.item.rarity].name + ', ' + statsText(r.item.e) + (r.item.up ? ', +' + r.item.up : '') + ') für ' + r.price + ' Gold an', () => socket.emit('tradeAccept'), () => socket.emit('tradeDeny'), 45000));
-  socket.on('kicked', (msg) => { alert(msg); location.reload(); });
+  socket.on('kicked', (msg) => { clearSession(); alert(msg); location.reload(); });
   socket.on('leaderboard', (r) => { lastLb[r.cat] = r.rows; if (bigKind === 'rank') renderBig(); });
   socket.on('notice', (t) => pushToast(t));
   socket.on('season', (r) => { mySeason = r; if (bigKind === 'raid') renderBig(); });
@@ -1788,7 +1811,7 @@ function startGame() {
     }
   });
 
-  socket.emit('auth', { mode: authMode, username, password, name, cls: selectedClass });
+  socket.emit('auth', { mode: useToken ? 'login' : authMode, username, token: useToken ? auto.token : undefined, password, name: useToken ? '' : name, cls: selectedClass });
 }
 
 // ---------------- Eingabe ----------------
