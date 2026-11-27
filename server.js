@@ -528,9 +528,16 @@ const SHOP_ITEMS = {
 // Solange leer, wird die Trinkgeld-Sektion im Shop ausgeblendet.
 const DONATE_LINKS = { kofi: '' };
 const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert', gg: 'gratuliert', hello: 'grüßt' };
+function dailyDealKey() {
+  const day = Math.floor(Date.now() / 86400000);
+  const keys = Object.keys(SHOP_ITEMS);
+  return keys[day % keys.length];
+}
 function shopCost(itemKey, currentCount) {
   const def = SHOP_ITEMS[itemKey];
-  return def.baseCost + def.scale * currentCount;
+  let c = def.baseCost + def.scale * currentCount;
+  if (itemKey === dailyDealKey()) c = Math.round(c * 0.7);
+  return c;
 }
 
 // ---------------- Game-State ----------------
@@ -2294,6 +2301,7 @@ io.on('connection', (socket) => {
         tile: TILE,
         classes: CLASSES,
         shop: SHOP_ITEMS,
+        deal: dailyDealKey(),
         donate: DONATE_LINKS,
         isAdmin: players[socket.id].isAdmin
       });

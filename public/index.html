@@ -710,11 +710,14 @@ const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0
 if (isTouchDevice) document.body.classList.add('touch-active');
 
 let SHOP_ITEMS = {};
+let DEAL = null;
 const SHOP_CATS = { verbrauch: '🧪 Verbrauch', upgrades: '⚔️ Upgrades', echtgeld: '💰 Echtgeld (Trinkgeld)' };
 let DONATE = { kofi: '' };
 function shopCostClient(key, count) {
   const d = SHOP_ITEMS[key];
-  return d.baseCost + d.scale * count;
+  let c = d.baseCost + d.scale * count;
+  if (key === DEAL) c = Math.round(c * 0.7);
+  return c;
 }
 let shopOpen = false;
 function toggleShop(force) {
@@ -735,6 +738,13 @@ function renderShop() {
     const cat = def.cat || 'verbrauch';
     (cats[cat] = cats[cat] || []).push(key);
   }
+  if (DEAL && SHOP_ITEMS[DEAL]) {
+    const banner = document.createElement('div');
+    banner.className = 'shopCat';
+    banner.style.color = '#8ee08e';
+    banner.textContent = `🏷️ Tagesangebot: ${SHOP_ITEMS[DEAL].label} (-30%)`;
+    box.appendChild(banner);
+  }
   const addHeader = (txt) => {
     const h = document.createElement('div');
     h.className = 'shopCat';
@@ -751,7 +761,7 @@ function renderShop() {
       const cost = shopCostClient(key, count);
       const row = document.createElement('div');
       row.className = 'shopItem';
-      row.innerHTML = `<div class="info">${def.label}${countKeys[key] ? `<div class="cnt">Stufe ${count}${def.maxCount ? '/' + def.maxCount : ''}</div>` : ''}</div>
+      row.innerHTML = `<div class="info">${key === DEAL ? '🏷️ ' : ''}${def.label}${countKeys[key] ? `<div class="cnt">Stufe ${count}${def.maxCount ? '/' + def.maxCount : ''}</div>` : ''}</div>
         <button ${maxedOut ? 'disabled' : ''} data-key="${key}">${maxedOut ? 'Max' : cost + '🪙'}</button>`;
       box.appendChild(row);
     }
@@ -1631,7 +1641,7 @@ function startGame() {
   });
   socket.on('init', (data) => {
     myId = data.you; DUNGEON_TIERS = data.dungeonTiers || {}; MONSTER_DEFS = data.monsterDefs || {}; ABILITIES = data.abilities || {}; DEFS = data.defs || {}; ARENA_MAP = data.arenaMap; BOSSROOM_MAP = data.bossRoomMap; TILE = data.tile; CLASSES = data.classes;
-    TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {}; SHOP_ITEMS = data.shop || {};
+    TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {}; SHOP_ITEMS = data.shop || {}; DEAL = data.deal || null;
     isAdmin = !!data.isAdmin;
     if (data.donate) DONATE = data.donate;
     if (magnetOn) socket.emit('setMagnet', true);
