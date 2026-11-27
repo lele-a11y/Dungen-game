@@ -667,6 +667,9 @@
         <div class="classBtn" data-cls="paladin">
           <span class="icon">✝️</span>Paladin<small>Viel HP, heilt sich</small>
         </div>
+        <div class="classBtn" data-cls="berserker">
+          <span class="icon">🪓</span>Berserker<small>Glaskanone, Blutrausch</small>
+        </div>
       </div>
       <div id="authMsg" style="color:#ff8080; font-size:12px; min-height:16px; margin-bottom:8px; text-align:center;"></div>
       <button id="playBtn">Einloggen &amp; Ins Dungeon!</button>
@@ -2117,6 +2120,11 @@ function drawHero(p, sx, sy, s, t) {
     ctx.beginPath(); ctx.moveTo(hx - fx * 3, hy - fy * 3); ctx.lineTo(hx, hy); ctx.stroke();
     ctx.fillStyle = '#d9b23c'; ctx.strokeStyle = '#5a4310'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(sx + ox * 11 + fx * 2, by + oy * 11 + fy * 2, 6, 0, TAU); ctx.fill(); ctx.stroke();
+  } else if (p.cls === 'berserker') {
+    const hx = sx - ox * 10 + fx * 3, hy = by - oy * 10 + fy * 3;
+    ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + fx * 17, hy + fy * 17); ctx.stroke();
+    ctx.fillStyle = '#cfd6e6'; ctx.beginPath(); ctx.moveTo(hx + fx * 17 + ox * 5, hy + fy * 17 + oy * 5); ctx.lineTo(hx + fx * 17 - fx * 4 + ox * 8, hy + fy * 17 - fy * 4 + oy * 8); ctx.lineTo(hx + fx * 17 - fx * 4 - ox * 8, hy + fy * 17 - fy * 4 - oy * 8); ctx.closePath(); ctx.fill();
   }
   const g = ctx.createRadialGradient(sx - 3, by - 4, 2, sx, by, 13);
   g.addColorStop(0, shade(color, 45)); g.addColorStop(1, shade(color, -35));
@@ -2680,7 +2688,7 @@ function render() {
       ctx.fillStyle = '#ff6a3c'; ctx.beginPath(); ctx.arc(mx, my - fall, 7, 0, TAU); ctx.fill();
     } else {
       const rr = Math.max(1, f.r * t);
-      const pal = { nova: ['rgba(255,150,60,0.25)', '#ff9a3c'], guard: ['rgba(100,170,255,0.25)', '#6fb7ff'], blades: ['rgba(190,140,255,0.25)', '#c9a0ff'] }[f.type] || ['rgba(255,230,140,0.2)', '#ffe08a'];
+      const pal = { nova: ['rgba(255,150,60,0.25)', '#ff9a3c'], guard: ['rgba(100,170,255,0.25)', '#6fb7ff'], blades: ['rgba(190,140,255,0.25)', '#c9a0ff'], rage: ['rgba(255,50,40,0.3)', '#ff5040'] }[f.type] || ['rgba(255,230,140,0.2)', '#ffe08a'];
       glow(f.x - camX, f.y - camY, rr, pal[0]);
       ctx.strokeStyle = pal[1]; ctx.lineWidth = 5;
       ctx.beginPath(); ctx.arc(f.x - camX, f.y - camY, rr, 0, TAU); ctx.stroke();

@@ -109,6 +109,7 @@ Die Minimap oben rechts zeigt nur den von dir erkundeten Bereich (Unerforschtes 
 | Magier | Feuernova | Ring aus 12 Geschossen | 10 s |
 | Schurke | Schattenschritt | Sprung in Zielrichtung, der nächste Nahkampfangriff ist ein sicherer Krit | 7 s |
 | Paladin | Heiliger Ruf | 25 % Heilung plus Heilschlag an allen Gegnern im Umkreis | 9 s |
+| Berserker | Blutrausch | Opfert 20 % LP für 6 s: +40 % Schaden | 14 s |
 
 Werte und Abklingzeiten stehen in `server.js` bei `ABILITIES` und in `useAbility`.
 
@@ -242,7 +243,7 @@ Händler (Shop), Schmied (Ausrüstung/Verbessern), Questgeberin, Herold (Raid & 
 - Geheimräume: eine Wand, die bei einem Angriff in der Nähe nachgibt (feine Risse, wenn man nah dran ist). Zwei Truhen drin, Schließung nach 5 Min.
 
 **Zweite Fähigkeit (Taste T, auf dem Handy eigener Button):**
-Krieger *Bollwerk* (5 s halber Schaden + 15 % Heilung), Magier *Meteor* (Einschlag nach 0,9 s), Schurke *Klingentanz* (3 Schläge rundherum), Paladin *Lichtwall* (4 s halber Schaden + 20 % Heilung).
+Krieger *Bollwerk* (5 s halber Schaden + 15 % Heilung), Magier *Meteor* (Einschlag nach 0,9 s), Schurke *Klingentanz* (3 Schläge rundherum), Paladin *Lichtwall* (4 s halber Schaden + 20 % Heilung), Berserker *Blutdurst* (6 s lang heilt jeder Treffer 20 % des Schadens + 10 % sofort).
 
 **Wiedergeburt** (Charakter → Aufstieg, ab Level 50, max. Stufe 10): Level startet bei 1, dauerhaft +6 % Leben/Schaden und +10 % XP je Stufe, dazu Gold, Essenz und eine legendäre Ausrüstung. Dort auch der **Klassenwechsel** (750 Gold).
 

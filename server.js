@@ -486,7 +486,8 @@ const CLASSES = {
   krieger: { name: 'Krieger', maxHp: 150, speed: 2.4, dmg: 18, range: 42, cooldown: 500, kind: 'melee', color: '#e74c3c' },
   magier:  { name: 'Magier',  maxHp: 80,  speed: 2.1, dmg: 27, range: 240, cooldown: 750, kind: 'ranged', color: '#3498db' },
   schurke: { name: 'Schurke', maxHp: 100, speed: 3.0, dmg: 10, range: 36, cooldown: 320, kind: 'melee', color: '#2ecc71', crit: 0.25 },
-  paladin: { name: 'Paladin', maxHp: 190, speed: 2.2, dmg: 15, range: 46, cooldown: 620, kind: 'melee', color: '#f1c40f' }
+  paladin: { name: 'Paladin', maxHp: 190, speed: 2.2, dmg: 15, range: 46, cooldown: 620, kind: 'melee', color: '#f1c40f' },
+  berserker: { name: 'Berserker', maxHp: 115, speed: 2.7, dmg: 30, range: 40, cooldown: 560, kind: 'melee', color: '#e67e22' }
 };
 
 function statsForLevel(clsKey, level) {
@@ -753,7 +754,8 @@ const ABILITIES2 = {
   krieger: { name: 'Bollwerk', icon: '🛡️', cd: 18000 },
   magier:  { name: 'Meteor', icon: '☄️', cd: 16000 },
   schurke: { name: 'Klingentanz', icon: '🗡️', cd: 14000 },
-  paladin: { name: 'Lichtwall', icon: '🔆', cd: 20000 }
+  paladin: { name: 'Lichtwall', icon: '🔆', cd: 20000 },
+  berserker: { name: 'Blutdurst', icon: '🧛', cd: 22000 }
 };
 function areaDamage(p, x, y, r, dmg) {
   if (!players[p.id] || p.dead) return;
@@ -812,6 +814,11 @@ function useAbility2(p) {
     p.guardUntil = now + 4000;
     p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.2));
     io.emit('abilityFx', { type: 'guard', x: p.x, y: p.y, r: 60, zone: p.zone, ms: 700 });
+  } else if (p.cls === 'berserker') {
+    // Blutdurst: 6 s lang heilt jeder Nahkampftreffer 20% des Schadens
+    p.lifestealUntil = now + 6000;
+    p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.1));
+    io.emit('abilityFx', { type: 'rage', x: p.x, y: p.y, r: 60, zone: p.zone, ms: 600 });
   }
 }
 
@@ -1145,11 +1152,13 @@ const ABILITIES = {
   krieger: { name: 'Wirbelschlag', icon: '🌀', cd: 8000 },
   magier:  { name: 'Feuernova', icon: '🔥', cd: 10000 },
   schurke: { name: 'Schattenschritt', icon: '👤', cd: 7000 },
-  paladin: { name: 'Heiliger Ruf', icon: '✨', cd: 9000 }
+  paladin: { name: 'Heiliger Ruf', icon: '✨', cd: 9000 },
+  berserker: { name: 'Blutrausch', icon: '🩸', cd: 14000 }
 };
 
 function rollDamage(p, def) {
   let dmg = p.dmg;
+  if (p.rageUntil && Date.now() < p.rageUntil) dmg = Math.round(dmg * 1.4);
   const cc = (def.crit || 0) + (p.critBonus || 0);
   if (cc > 0 && Math.random() < cc) dmg *= 2;
   if (p.critUntil && Date.now() < p.critUntil) { dmg *= 2; p.critUntil = 0; }
@@ -1212,6 +1221,13 @@ function useAbility(p) {
     p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.25));
     areaDamage(p, p.x, p.y, 100, Math.round(p.dmg * 1.2 * pw));
     io.emit('abilityFx', { type: 'nova', x: p.x, y: p.y, r: 100, zone: p.zone });
+  } else if (p.cls === 'berserker') {
+    // Blutrausch: opfert 20% max. LP fuer 6 s +40% Schaden
+    const cost = Math.round(p.maxHp * 0.2);
+    if (p.hp <= cost + 1) return notice(p, 'Dein Blut reicht nicht für den Blutrausch.');
+    p.hp -= cost;
+    p.rageUntil = now + 6000;
+    io.emit('abilityFx', { type: 'rage', x: p.x, y: p.y, r: 70, zone: p.zone, ms: 600 });
   }
 }
 
@@ -2357,6 +2373,7 @@ io.on('connection', (socket) => {
         let dmg = rollDamage(p, def);
         closest.hp -= dmg;
         if (closest.raid) creditRaid(closest, p, dmg);
+        if (p.lifestealUntil && Date.now() < p.lifestealUntil) p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg * 0.2));
         io.emit('hit', { x: closest.x, y: closest.y, dmg });
         if (closest.hp <= 0) {
           onMonsterKilled(closest, p);
@@ -3290,7 +3307,7 @@ io.on('connection', (socket) => {
     if (!(p.zone === 'town' || isDungeonTier(p.zone))) return notice(p, 'Klassenwechsel geht nur in der Stadt oder im Dungeon.');
     if (p.gold < CLASS_CHANGE_COST) return notice(p, `Ein Klassenwechsel kostet ${CLASS_CHANGE_COST} Gold.`);
     p.gold -= CLASS_CHANGE_COST;
-    p.cls = cls; p.abilityReadyAt = 0; p.ability2ReadyAt = 0; p.critUntil = 0; p.guardUntil = 0;
+    p.cls = cls; p.abilityReadyAt = 0; p.ability2ReadyAt = 0; p.critUntil = 0; p.guardUntil = 0; p.rageUntil = 0; p.lifestealUntil = 0;
     recomputeStats(p);
     p.hp = p.maxHp;
     notice(p, `🔄 Du bist jetzt ${CLASSES[cls].name}!`);
