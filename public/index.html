@@ -119,6 +119,32 @@
   .menuOption:hover { border-color: var(--accent); }
   #menuOptionLeave { color:#ff8a8a; }
 
+  /* Alle Ueberlagerungs-Menues scrollbar machen */
+  #menuPanel, #pvpPanel, #bossroomPanel, #playersPanel, #tiersPanel, #shopPanel, #miscPanel, #depotPanel {
+    max-height: 92vh; overflow-y: auto;
+  }
+
+  #depotPanel {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    background: var(--panel); border:2px solid #2a2f3a; border-radius:14px;
+    padding:20px 22px; width:640px; max-width:96vw; z-index:26; display:none;
+    box-shadow: 0 10px 40px rgba(0,0,0,.6);
+  }
+  #depotPanel h2 { margin:0 0 4px; color:var(--accent); font-size:19px; text-align:center; }
+  #depotPanel p.sub { margin:0 0 12px; text-align:center; color:#9aa2b1; font-size:12px; }
+  #depotPanel h3 { margin:10px 0 6px; font-size:13px; color:#cfd6e6; }
+  .depotResRow { display:flex; justify-content:space-between; align-items:center; background:#0d1117; border:1px solid #2a2f3a; border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:12px; }
+  .depotResRow .rBtns { display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
+  .depotResRow button { padding:4px 8px; border:none; border-radius:6px; font-size:10px; cursor:pointer; background:#2a2f3a; color:#ddd; }
+  .depotResRow button.go { background: linear-gradient(180deg,#8ee08e,#4caf50); color:#0a2f0a; font-weight:bold; }
+  .depotCols { display:flex; gap:14px; }
+  .depotCols > div { flex:1; min-width:0; }
+  .depotCols .itemRow { font-size:11px; padding:6px 8px; }
+  .depotCols .itemRow button { padding:4px 8px; font-size:10px; border:none; border-radius:6px; cursor:pointer; background: linear-gradient(180deg,#f0d27a,#c99a3a); color:#241a05; font-weight:bold; }
+  .depotCols .itemRow button.alt { background:#2a2f3a; color:#ddd; }
+  #depotAllBtn { width:100%; margin-top:6px; padding:7px; border:none; border-radius:8px; background:#2a2f3a; color:#ddd; font-size:11px; cursor:pointer; }
+  #depotClose { width:100%; margin-top:12px; padding:8px; border:none; border-radius:8px; background:#2a2f3a; color:#ddd; cursor:pointer; font-size:12px; }
+
   #pvpPanel {
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
     background: var(--panel); border:2px solid #2a2f3a; border-radius:14px;
@@ -445,7 +471,7 @@
     <h2 style="margin:0 0 10px; color:var(--accent); font-size:18px; text-align:center;">🧭 Sonstiges</h2>
     <div style="font-size:13px; line-height:1.7;">
       <p style="margin:6px 0;"><b>Leo's Dungeon RPG</b> · v1.0<br><span class="muted">Ein Echtzeit-Multiplayer-Dungeon-RPG.</span></p>
-      <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex</p>
+      <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex /gg /hello · /stats für Statistiken</p>
       <div style="display:flex; gap:8px; margin-top:10px;">
         <button class="menuOption" id="miscKofi" style="flex:1;">☕ Trinkgeld</button>
         <button class="menuOption" id="miscClose" style="flex:1;">Schließen</button>
@@ -557,6 +583,25 @@
     <div id="shopItems"></div>
     <div id="shopMsg"></div>
     <button id="shopClose">Schliessen</button>
+  </div>
+
+  <div id="depotPanel">
+    <h2>📦 Depot</h2>
+    <p class="sub">Verwalterin Lyra · nur in der Stadt · Gegenstände und Ressourcen sicher aufbewahren</p>
+    <div id="depotRes"></div>
+    <div class="depotCols">
+      <div>
+        <h3>Dein Inventar</h3>
+        <div id="depotInv"></div>
+        <button id="depotAllIn">⬆ Alles einlagern</button>
+      </div>
+      <div>
+        <h3>Depot (<span id="depotCount">0</span>/60)</h3>
+        <div id="depotStore"></div>
+        <button id="depotAllOut">⬇ Alles entnehmen</button>
+      </div>
+    </div>
+    <button id="depotClose">Schliessen</button>
   </div>
 
   <div id="mobileControls">
@@ -707,6 +752,63 @@ function renderShop() {
   });
 }
 document.getElementById('shopClose').addEventListener('click', () => toggleShop(false));
+
+// ---------------- Depot ----------------
+let depotOpen = false;
+function toggleDepot(force) {
+  depotOpen = (typeof force === 'boolean') ? force : !depotOpen;
+  document.getElementById('depotPanel').style.display = depotOpen ? 'block' : 'none';
+  if (depotOpen) renderDepot();
+}
+function depotItemRow(it, dir) {
+  const col = RARITY_COLORS[it.rarity] || '#fff';
+  const sellBtn = dir === 'out' ? `<button class="alt" data-sell="${it.id}" title="Verkaufen">+${it.sell}🪙</button>` : '';
+  return `<div class="itemRow" style="border-left-color:${col}">
+    <div><b style="color:${col}">${esc(it.name)}${it.up ? ' +' + it.up : ''}</b> <span class="muted">${DEFS.rarities[it.rarity].name} · ${SLOT_LABELS[it.slot]}</span>
+    <div class="meta">${statsText(it.e)}</div></div>
+    <div class="acts"><button data-dir="${dir}" data-id="${it.id}">${dir === 'in' ? 'Einlagern' : 'Entnehmen'}</button>${sellBtn}</div></div>`;
+}
+function renderDepot() {
+  if (!profile || !profile.storage) return;
+  const me = myPlayer() || {};
+  const st = profile.storage;
+  const resBox = document.getElementById('depotRes');
+  const RES = [['gold', '🪙 Gold'], ['essence', '✦ Essenz'], ['potions', '🧪 Heiltränke'], ['speedPotions', '⚡ Tempo-Tränke']];
+  resBox.innerHTML = RES.map(([mat, label]) => {
+    const have = me[mat] || 0, stored = st[mat] || 0;
+    return `<div class="depotResRow"><span>${label} · du: <b>${have}</b> · Depot: <b>${stored}</b></span>
+      <span class="rBtns">
+        <button data-res="${mat}" data-dir="in" data-amt="100" ${have < 1 ? 'disabled' : ''}>+100</button>
+        <button class="go" data-res="${mat}" data-dir="in" data-all="1" ${have < 1 ? 'disabled' : ''}>Alles</button>
+        <button data-res="${mat}" data-dir="out" data-amt="100" ${stored < 1 ? 'disabled' : ''}>-100</button>
+        <button data-res="${mat}" data-dir="out" data-all="1" ${stored < 1 ? 'disabled' : ''}>Alles</button>
+      </span></div>`;
+  }).join('');
+  const inv = profile.inventory || [];
+  const store = st.items || [];
+  document.getElementById('depotCount').textContent = store.length;
+  document.getElementById('depotInv').innerHTML = inv.length ? inv.map(it => depotItemRow(it, 'in')).join('') : '<p class="muted" style="font-size:11px">Inventar leer</p>';
+  document.getElementById('depotStore').innerHTML = store.length ? store.map(it => depotItemRow(it, 'out')).join('') : '<p class="muted" style="font-size:11px">Depot leer</p>';
+  resBox.querySelectorAll('button[data-res]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const d = { mat: btn.dataset.res, dir: btn.dataset.dir };
+      if (btn.dataset.all) d.all = true; else d.amount = Number(btn.dataset.amt);
+      socket.emit('storageRes', d);
+    });
+  });
+  document.querySelectorAll('#depotInv button[data-id]').forEach(btn => {
+    btn.addEventListener('click', () => socket.emit('storageMove', { dir: 'in', itemId: btn.dataset.id }));
+  });
+  document.querySelectorAll('#depotStore button[data-id]').forEach(btn => {
+    btn.addEventListener('click', () => socket.emit('storageMove', { dir: 'out', itemId: btn.dataset.id }));
+  });
+  document.querySelectorAll('#depotStore button[data-sell]').forEach(btn => {
+    btn.addEventListener('click', () => socket.emit('storageSell', { id: btn.dataset.sell }));
+  });
+}
+document.getElementById('depotAllIn').addEventListener('click', () => socket.emit('storageMove', { dir: 'in', all: true }));
+document.getElementById('depotAllOut').addEventListener('click', () => socket.emit('storageMove', { dir: 'out', all: true }));
+document.getElementById('depotClose').addEventListener('click', () => toggleDepot(false));
 
 // ---------------- Menü ----------------
 let menuOpen = false;
@@ -924,7 +1026,7 @@ const ABILITY_TEXT = {
   paladin: ['Heiliger Ruf: 25% Heilung + Heilschlag im Umkreis (9 s)', 'Lichtwall: 4 s halber Schaden, 20% Heilung (20 s)']
 };
 const BIG = {
-  char: { title: '🎒 Charakter', tabs: [['equip', 'Ausrüstung'], ['skills', 'Fertigkeiten'], ['craft', 'Handwerk'], ['look', 'Aussehen'], ['rebirth', 'Aufstieg']] },
+  char: { title: '🎒 Charakter', tabs: [['equip', 'Ausrüstung'], ['skills', 'Fertigkeiten'], ['craft', 'Handwerk'], ['look', 'Aussehen'], ['stats', 'Statistik'], ['rebirth', 'Aufstieg']] },
   rank: { title: '🏆 Erfolge & Rangliste', tabs: [['ach', 'Erfolge'], ['level', 'Level'], ['kills', 'Kills'], ['boss', 'Bosse'], ['pvp', 'Arena']] }
 };
 BIG.raid = { title: '🐉 Raid & Saison', tabs: [['raid', 'Raid'], ['season', 'Saison']] };
@@ -1022,6 +1124,19 @@ function bigBody() {
     h += '<h3>Begleiter</h3>';
     h += profile.pet ? '<div class="itemRow"><div>🐺 <b>Wolf</b><div class="meta">folgt dir und greift Gegner in der Nähe an</div></div></div>'
       : `<div class="itemRow"><div>🐺 <b>Wolf</b><div class="meta">folgt dir und greift Gegner in der Nähe an</div></div><div class="acts"><button data-act="buyPet" data-arg="">Kaufen · ${DEFS.petCost}🪙</button></div></div>`;
+  } else if (key === 'char:stats') {
+    const s = profile.stats || {};
+    const rows = [
+      ['⚔️ Monster besiegt', s.kills], ['👑 Bosse besiegt', s.bossKills], ['🥊 Spieler besiegt', s.pvpKills],
+      ['📦 Truhen geöffnet', s.chests], ['💰 Gold verdient', s.goldEarned], ['📜 Quests erledigt', s.questsDone],
+      ['🔐 Tresore geöffnet', s.vaults], ['🕳️ Geheimräume', s.secrets], ['🐉 Raid-Bosse', s.raidKills]
+    ];
+    h += '<h3>Deine Statistiken</h3>';
+    h += rows.map(([label, v]) => `<div class="itemRow"><div>${label}</div><div><b>${(v || 0).toLocaleString('de-DE')}</b></div></div>`).join('');
+    h += `<div class="itemRow"><div>🏅 Erfolge freigeschaltet</div><div><b>${(profile.achievements || []).length} / ${DEFS.achievements.length}</b></div></div>`;
+    const done = new Set(profile.achievements || []);
+    h += '<h3>Erfolge</h3>';
+    h += DEFS.achievements.map(a => `<div class="itemRow" style="${done.has(a.id) ? '' : 'opacity:.45'}"><div><b>${done.has(a.id) ? '✅' : '🔒'} ${esc(a.name)}</b><div class="meta">${esc(a.desc)} · ${a.gold}🪙</div></div></div>`).join('');
   } else if (key === 'social:group') {
     const mePl = myPlayer() || {};
     const members = mePl.party ? world.players.filter(q => q.party === mePl.party) : [];
@@ -1206,13 +1321,13 @@ function toggleQuestsPanel(force) {
 function renderQuestHud() {
   const el = document.getElementById('questHud');
   if (!el) return;
-  el.innerHTML = myQuests.map(q => '<div>📜 ' + esc(q.text) + ' <b>' + q.progress + '/' + q.target + '</b></div>').join('');
+  el.innerHTML = myQuests.map(q => '<div>' + (q.daily ? '⭐ ' : '📜 ') + esc(q.text) + ' <b>' + q.progress + '/' + q.target + '</b></div>').join('');
 }
 function renderQuestsPanel() {
   const list = document.getElementById('questsList');
   list.innerHTML = myQuests.map((q, i) => `
     <div class="questRow">
-      <div class="qTop"><span>${esc(q.text)}</span><button data-idx="${i}">Tauschen</button></div>
+      <div class="qTop"><span>${q.daily ? '⭐ ' : ''}${esc(q.text)}</span>${q.daily ? '<span class="qMeta">Tagesquest</span>' : `<button data-idx="${i}">Tauschen</button>`}</div>
       <div class="qBar"><div style="width:${Math.min(100, (q.progress / q.target) * 100)}%"></div></div>
       <div class="qMeta">${q.progress}/${q.target} · Belohnung: 🪙 ${q.gold} · ✨ ${q.xp} XP${q.potions ? ' · 🧪 ' + q.potions : ''}</div>
     </div>`).join('');
@@ -1242,7 +1357,7 @@ function renderTiersPanel() {
     const rec = me.bossBest && me.bossBest[key];
     const recTxt = rec ? ` · ⏱️ ${Math.floor(rec / 60)}:${String(rec % 60).padStart(2, '0')}` : '';
     return `<div class="tierRow ${current ? 'current' : ''} ${locked ? 'locked' : ''}">
-      <div><div>🏰 ${t.name}</div><div class="tierMeta">${locked ? '🔒 ab Level ' + t.minLevel : 'ab Level ' + t.minLevel}${current ? ' · du bist hier' : ''}${recTxt}</div></div>
+      <div><div>🏰 ${t.name}</div><div class="tierMeta">${locked ? '🔒 ab Level ' + t.minLevel : 'ab Level ' + t.minLevel}${current ? ' · du bist hier' : ''}${recTxt}${t.monsters && t.monsters.length ? '<br>👾 ' + t.monsters.join(', ') : ''}</div></div>
       <button data-tier="${key}" ${locked || current ? 'disabled' : ''}>Betreten</button>
     </div>`;
   }).join('');
@@ -1516,7 +1631,7 @@ function startGame() {
     toast._t = setTimeout(() => { toast.style.display = 'none'; }, 4500);
   });
 
-  socket.on('profile', (pr) => { profile = pr; if (bigKind) renderBig(); });
+  socket.on('profile', (pr) => { profile = pr; if (bigKind) renderBig(); if (depotOpen) renderDepot(); });
   socket.on('friends', (list) => { myFriends = list || []; if (bigKind === 'social') renderBig(); });
   socket.on('guild', (g) => { myGuild = g || null; if (bigKind === 'social') renderBig(); });
   socket.on('guildInvited', (r) => showPrompt('guild', '🏰 ' + r.fromName + ' lädt dich in die Gilde „' + r.guildName + '“ [' + r.tag + '] ein', () => socket.emit('guildAccept'), () => socket.emit('guildDecline'), 45000));
@@ -1713,11 +1828,16 @@ function bindInput() {
   document.getElementById('mAbility2').addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('ability2'); }, { passive: false });
 }
 
-const EMOTE_CMDS = { '/wave': 'winkt', '/dance': 'tanzt', '/cheer': 'jubelt', '/cry': 'weint', '/laugh': 'lacht', '/flex': 'posiert' };
+const EMOTE_CMDS = { '/wave': 'winkt', '/dance': 'tanzt', '/cheer': 'jubelt', '/cry': 'weint', '/laugh': 'lacht', '/flex': 'posiert', '/gg': 'gratuliert', '/hello': 'grüßt' };
 function sendChatText(ct) {
   if (!ct) return;
   const emoteKey = Object.keys(EMOTE_CMDS).find(c => ct.toLowerCase() === c);
   if (emoteKey) { socket.emit('emote', emoteKey.slice(1)); return; }
+  if (ct.toLowerCase() === '/stats' && profile) {
+    const s = profile.stats || {};
+    addChat(`⚔️ ${s.kills || 0} Monster · 👑 ${s.bossKills || 0} Bosse · 🥊 ${s.pvpKills || 0} PvP · 📦 ${s.chests || 0} Truhen · 🏅 ${(profile.achievements || []).length}/${DEFS.achievements.length} Erfolge`);
+    return;
+  }
   if (ct.startsWith('/gc ')) { if (ct.slice(4).trim()) socket.emit('guildChat', ct.slice(4).trim()); }
   else if (ct.startsWith('/g ')) { if (ct.slice(3).trim()) socket.emit('partyChat', ct.slice(3).trim()); }
   else socket.emit('chat', ct);
@@ -1747,6 +1867,7 @@ function openNpc(panel) {
   else if (panel === 'raid') openBig('raid', 'raid');
   else if (panel === 'rebirth') openBig('char', 'rebirth');
   else if (panel === 'craft') openBig('char', 'craft');
+  else if (panel === 'depot') toggleDepot(true);
   else if (panel === 'buff') socket.emit('jokerBuff');
 }
 

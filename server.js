@@ -69,6 +69,7 @@ async function createAccount(username, passwordHash, cls) {
     inventory: [], equipment: {}, skills: {}, essence: 0, cosmetics: {}, pet: null,
     stats: {}, achievements: [], daily: {}, friends: [], guild: null,
     keys: 0, prestige: 0, season: { id: '', points: 0 }, week: { id: '', points: 0 }, bossBest: {},
+    storage: { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 },
     createdAt: new Date()
   };
   if (accountsCol) await accountsCol.insertOne(doc);
@@ -86,7 +87,9 @@ async function saveAccountProgress(p) {
         inventory: p.inventory || [], equipment: p.equipment || {}, skills: p.skills || {}, essence: p.essence || 0,
         cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null,
         keys: p.keys || 0, prestige: p.prestige || 0, season: p.season || { id: '', points: 0 },
-        week: p.week || { id: '', points: 0 }, bossBest: p.bossBest || {}
+        week: p.week || { id: '', points: 0 }, bossBest: p.bossBest || {},
+        storage: p.storage || { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 },
+        dailyQuest: p.dailyQuest || null
       } }
     );
   } catch (err) {
@@ -447,7 +450,8 @@ const TOWN_NPCS = [
   { id: 'herald',  name: 'Herold Torben',      icon: '🐉', panel: 'raid',    ...tileCenter(31, 18) },
   { id: 'rebirth', name: 'Meister der Wiedergeburt', icon: '⭐', panel: 'rebirth', ...tileCenter(20, 5) },
   { id: 'craft',   name: 'Werkstatt',           icon: '🔨', panel: 'craft',   ...tileCenter(20, 18) },
-  { id: 'joker',   name: 'Gaukler Finn',        icon: '🤡', panel: 'buff',    ...tileCenter(35, 11) }
+  { id: 'joker',   name: 'Gaukler Finn',        icon: '🤡', panel: 'buff',    ...tileCenter(35, 11) },
+  { id: 'depot',   name: 'Verwalterin Lyra',    icon: '📦', panel: 'depot',   ...tileCenter(26, 11) }
 ];
 
 function mapFor(zone) {
@@ -519,7 +523,7 @@ const SHOP_ITEMS = {
 // Trinkgeld-Link: hier die eigene Ko-fi-URL eintragen (z.B. 'https://ko-fi.com/name').
 // Solange leer, wird die Trinkgeld-Sektion im Shop ausgeblendet.
 const DONATE_LINKS = { kofi: '' };
-const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert' };
+const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert', gg: 'gratuliert', hello: 'grüßt' };
 function shopCost(itemKey, currentCount) {
   const def = SHOP_ITEMS[itemKey];
   return def.baseCost + def.scale * currentCount;
@@ -1262,8 +1266,53 @@ function ensureQuests(p) {
   while (p.quests.length < QUEST_COUNT) p.quests.push(makeQuest(p, p.quests));
 }
 
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function sanitizeDailyQuest(q) {
+  if (!q || typeof q !== 'object') return null;
+  if (q.done === true) return { done: true, day: typeof q.day === 'string' ? q.day.slice(0, 10) : '' };
+  if (!QUEST_TYPES.includes(q.type) || !Number.isFinite(q.target) || q.target <= 0 || typeof q.text !== 'string') return null;
+  return {
+    id: String(q.id || ''), type: q.type, sub: q.sub ? String(q.sub) : undefined, target: q.target,
+    progress: Math.min(Math.max(0, Number(q.progress) || 0), q.target), text: q.text.slice(0, 80),
+    gold: Math.max(0, Number(q.gold) || 0), xp: Math.max(0, Number(q.xp) || 0), potions: Math.max(0, Number(q.potions) || 0),
+    day: typeof q.day === 'string' ? q.day.slice(0, 10) : '', daily: true
+  };
+}
+
+function makeDailyQuest(p) {
+  const existing = [...(p.quests || []), ...(p.dailyQuest && p.dailyQuest.daily ? [p.dailyQuest] : [])];
+  const q = makeQuest(p, existing);
+  q.gold = Math.round(q.gold * 1.5);
+  q.xp = Math.round(q.xp * 1.5);
+  q.potions = (q.potions || 0) + 1;
+  q.day = todayStr();
+  q.daily = true;
+  return q;
+}
+
+function ensureDailyQuest(p) {
+  const today = todayStr();
+  if (p.dailyQuest && p.dailyQuest.day === today) return;
+  p.dailyQuest = makeDailyQuest(p);
+}
+
+function completeDailyQuest(p) {
+  const q = p.dailyQuest;
+  addSeasonPoints(p, 12);
+  p.gold += q.gold;
+  p.potions += q.potions;
+  p.essence += 10;
+  grantXp(p, q.xp);
+  p.stats.questsDone++;
+  checkAchievements(p);
+  p.dailyQuest = { done: true, day: q.day };
+  io.to(p.id).emit('questDone', { text: '⭐ ' + q.text, gold: q.gold, xp: q.xp, potions: q.potions });
+  saveAccountProgress(p);
+}
+
 function sendQuests(p) {
-  io.to(p.id).emit('quests', p.quests);
+  io.to(p.id).emit('quests', p.quests.concat(p.dailyQuest && p.dailyQuest.daily ? [p.dailyQuest] : []));
 }
 
 function completeQuest(p, i) {
@@ -1292,11 +1341,23 @@ function questProgress(p, event, amount, sub) {
     changed = true;
     if (q.progress >= q.target) completeQuest(p, i);
   }
+  const dq = p.dailyQuest;
+  if (dq && dq.daily && dq.progress < dq.target) {
+    let match;
+    if (event === 'kill') match = dq.type === 'kill' || (dq.type === 'killType' && dq.sub === sub) || (dq.type === 'boss' && sub === 'boss');
+    else match = dq.type === event;
+    if (match) {
+      dq.progress = Math.min(dq.target, dq.progress + amount);
+      changed = true;
+      if (dq.progress >= dq.target) completeDailyQuest(p);
+    }
+  }
   if (changed) sendQuests(p);
 }
 
 // ---------------- Fortschritt: Ausruestung, Fertigkeiten, Handwerk, Erfolge ----------------
 const INVENTORY_MAX = 30;
+const STORAGE_MAX = 60;
 const UPGRADE_MAX = 5;
 const SLOTS = ['weapon', 'armor', 'ring'];
 const RARITIES = [
@@ -1318,8 +1379,10 @@ const SKILL_DEFS = {
   greed: { name: 'Goldnase', desc: '+6% Gold aus Monstern und Truhen', max: 5 }
 };
 const RECIPES = {
-  heal3:  { name: '3 Heiltränke', essence: 6 },
-  speed2: { name: '2 Tempo-Tränke', essence: 8 }
+  heal3:  { name: '3 Heiltränke', essence: 6, give: { potions: 3 } },
+  heal5:  { name: '5 Heiltränke', essence: 10, give: { potions: 5 } },
+  speed2: { name: '2 Tempo-Tränke', essence: 8, give: { speedPotions: 2 } },
+  speed3: { name: '3 Tempo-Tränke', essence: 12, give: { speedPotions: 3 } }
 };
 const ACHIEVEMENTS = [
   { id: 'k100', name: 'Monsterjäger I', desc: '100 Monster besiegen', stat: 'kills', thr: 100, gold: 100 },
@@ -1344,7 +1407,14 @@ const ACHIEVEMENTS = [
   { id: 's1', name: 'Spürnase', desc: '1 Geheimraum entdecken', stat: 'secrets', thr: 1, gold: 300 },
   { id: 'r1', name: 'Weltenfresser-Jäger', desc: '1 Raid-Boss besiegen', stat: 'raidKills', thr: 1, gold: 1500 },
   { id: 'r10', name: 'Raid-Veteran', desc: '10 Raid-Bosse besiegen', stat: 'raidKills', thr: 10, gold: 8000 },
-  { id: 'pr1', name: 'Wiedergeboren', desc: 'Die Wiedergeburt abschließen', stat: 'prestige', thr: 1, gold: 2000 }
+  { id: 'pr1', name: 'Wiedergeboren', desc: 'Die Wiedergeburt abschließen', stat: 'prestige', thr: 1, gold: 2000 },
+  { id: 'l75', name: 'Hochburgbezwinger', desc: 'Level 75 erreichen', stat: 'level', thr: 75, gold: 6000 },
+  { id: 'k25000', name: 'Vernichter', desc: '25000 Monster besiegen', stat: 'kills', thr: 25000, gold: 12000 },
+  { id: 'b100', name: 'Legendärer Jäger', desc: '100 Bosse besiegen', stat: 'bossKills', thr: 100, gold: 15000 },
+  { id: 'c250', name: 'Kistenkönig', desc: '250 Truhen öffnen', stat: 'chests', thr: 250, gold: 5000 },
+  { id: 'g200k', name: 'Millionär', desc: '200000 Gold verdienen', stat: 'goldEarned', thr: 200000, gold: 8000 },
+  { id: 's5', name: 'Geheimnisjäger', desc: '5 Geheimräume entdecken', stat: 'secrets', thr: 5, gold: 1500 },
+  { id: 'v6', name: 'Bankknacker', desc: '6 Tresore öffnen', stat: 'vaults', thr: 6, gold: 1200 }
 ];
 const ACH_IDS = new Set(ACHIEVEMENTS.map(a => a.id));
 const COSMETICS = {
@@ -1358,7 +1428,9 @@ const COSMETICS = {
     white:  { name: 'Weiss', hex: '#f2f2f2', price: 150 },
     orange: { name: 'Orange', hex: '#ff9f43', price: 150 },
     cyan:   { name: 'Cyan', hex: '#3fd2ff', price: 150 },
-    silver: { name: 'Silber', hex: '#cfd6e6', price: 200 }
+    silver: { name: 'Silber', hex: '#cfd6e6', price: 200 },
+    lava:   { name: 'Lava', hex: '#ff6a00', price: 250 },
+    toxic:  { name: 'Toxisch', hex: '#b6ff3c', price: 250 }
   },
   hat: {
     cap:     { name: 'Mütze', icon: '🧢', price: 200 },
@@ -1371,7 +1443,9 @@ const COSMETICS = {
     vampire: { name: 'Vampir', icon: '🧛', price: 450 },
     cowboy:  { name: 'Cowboy', icon: '🤠', price: 300 },
     pumpkin: { name: 'Kürbis', icon: '🎃', price: 300 },
-    halo:    { name: 'Heiligenschein', icon: '😇', price: 250 }
+    halo:    { name: 'Heiligenschein', icon: '😇', price: 250 },
+    crown2:  { name: 'Goldene Krone', icon: '💛', price: 800 },
+    wizard2: { name: 'Runehut', icon: '🔮', price: 500 }
   }
 };
 const PET_COST = 400;
@@ -1475,11 +1549,22 @@ function profileFromAccount(a) {
     guild: typeof a.guild === 'string' ? a.guild.slice(0, 40) : null,
     friends: (Array.isArray(a.friends) ? a.friends : []).filter(x => typeof x === 'string' && x.length >= 3 && x.length <= 20).slice(0, 50),
     daily: { last: a.daily && typeof a.daily.last === 'string' ? a.daily.last : '', streak: Math.max(0, Number(a.daily && a.daily.streak) || 0) },
+    dailyQuest: sanitizeDailyQuest(a.dailyQuest),
     keys: Math.max(0, Math.min(99, Number(a.keys) || 0)),
     prestige: Math.max(0, Math.min(PRESTIGE_MAX, Number(a.prestige) || 0)),
     season: { id: a.season && typeof a.season.id === 'string' ? a.season.id.slice(0, 10) : '', points: Math.max(0, Number(a.season && a.season.points) || 0) },
     week: { id: a.week && typeof a.week.id === 'string' ? a.week.id.slice(0, 10) : '', points: Math.max(0, Number(a.week && a.week.points) || 0) },
-    bossBest: (a.bossBest && typeof a.bossBest === 'object') ? a.bossBest : {}
+    bossBest: (a.bossBest && typeof a.bossBest === 'object') ? a.bossBest : {},
+    storage: (() => {
+      const s = a.storage && typeof a.storage === 'object' ? a.storage : {};
+      return {
+        items: (Array.isArray(s.items) ? s.items : []).map(sanitizeItem).filter(Boolean).slice(0, STORAGE_MAX),
+        gold: Math.max(0, Number(s.gold) || 0),
+        essence: Math.max(0, Number(s.essence) || 0),
+        potions: Math.max(0, Number(s.potions) || 0),
+        speedPotions: Math.max(0, Number(s.speedPotions) || 0)
+      };
+    })()
   };
 }
 function sendProfile(p) {
@@ -1487,7 +1572,14 @@ function sendProfile(p) {
     inventory: p.inventory.map(withEff),
     equipment: { weapon: withEff(p.equipment.weapon), armor: withEff(p.equipment.armor), ring: withEff(p.equipment.ring) },
     skills: p.skills, skillPoints: skillPointsFree(p), cosmetics: p.cosmetics, pet: p.pet,
-    stats: p.stats, achievements: p.achievements, daily: p.daily, prestige: p.prestige || 0
+    stats: p.stats, achievements: p.achievements, daily: p.daily, prestige: p.prestige || 0,
+    storage: {
+      items: (p.storage && p.storage.items ? p.storage.items : []).map(withEff),
+      gold: p.storage ? p.storage.gold : 0,
+      essence: p.storage ? p.storage.essence : 0,
+      potions: p.storage ? p.storage.potions : 0,
+      speedPotions: p.storage ? p.storage.speedPotions : 0
+    }
   });
 }
 function giveItem(p, item) {
@@ -2137,6 +2229,7 @@ io.on('connection', (socket) => {
       recomputeStats(players[socket.id]);
       players[socket.id].hp = players[socket.id].maxHp;
       ensureQuests(players[socket.id]);
+      ensureDailyQuest(players[socket.id]);
       {
         const me0 = players[socket.id];
         const g0 = me0.guild ? await loadGuild(me0.guild) : null;
@@ -2147,7 +2240,8 @@ io.on('connection', (socket) => {
       const dungeonTiersPayload = {};
       for (const key in DUNGEON_TIERS) {
         const t = DUNGEON_TIERS[key];
-        dungeonTiersPayload[key] = { name: t.name, minLevel: t.minLevel, rows: t.rows, theme: t.theme, traps: t.traps };
+        dungeonTiersPayload[key] = { name: t.name, minLevel: t.minLevel, rows: t.rows, theme: t.theme, traps: t.traps,
+          monsters: [...new Set((t.pool || []).map(([ty]) => MONSTER_TYPES[ty] ? MONSTER_TYPES[ty].name : ty))] };
       }
       socket.emit('init', {
         you: socket.id,
@@ -2406,10 +2500,70 @@ io.on('connection', (socket) => {
     if (!p || !r) return;
     if (p.essence < r.essence) return notice(p, `Du brauchst ${r.essence} Essenz.`);
     p.essence -= r.essence;
-    if (d.recipe === 'heal3') p.potions += 3;
-    if (d.recipe === 'speed2') p.speedPotions += 2;
+    for (const k in (r.give || {})) p[k] = (p[k] || 0) + r.give[k];
     saveAccountProgress(p);
     notice(p, `🔨 Hergestellt: ${r.name}`);
+  });
+
+  socket.on('storageMove', (d) => {
+    const p = players[socket.id];
+    if (!p || p.zone !== 'town') return notice(p, 'Das Depot ist nur in der Stadt.');
+    if (!p.storage) p.storage = { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 };
+    const dir = d && d.dir;
+    if (dir !== 'in' && dir !== 'out') return;
+    if (d.all) {
+      const from = dir === 'in' ? p.inventory : p.storage.items;
+      const to = dir === 'in' ? p.storage.items : p.inventory;
+      const cap = dir === 'in' ? STORAGE_MAX : INVENTORY_MAX;
+      let moved = 0;
+      while (from.length && to.length < cap) { to.push(from.shift()); moved++; }
+      if (!moved) return notice(p, dir === 'in' ? 'Depot ist voll.' : 'Inventar ist voll.');
+      sendProfile(p); saveAccountProgress(p);
+      notice(p, `📦 ${moved} Gegenstand${moved === 1 ? '' : 'e'} ${dir === 'in' ? 'eingelagert' : 'entnommen'}.`);
+      return;
+    }
+    const id = d && d.itemId;
+    const from = dir === 'in' ? p.inventory : p.storage.items;
+    const to = dir === 'in' ? p.storage.items : p.inventory;
+    const cap = dir === 'in' ? STORAGE_MAX : INVENTORY_MAX;
+    const idx = from.findIndex(it => it.id === id);
+    if (idx < 0) return;
+    if (to.length >= cap) return notice(p, dir === 'in' ? 'Depot ist voll.' : 'Inventar ist voll.');
+    to.push(from.splice(idx, 1)[0]);
+    sendProfile(p); saveAccountProgress(p);
+  });
+
+  socket.on('storageRes', (d) => {
+    const p = players[socket.id];
+    if (!p || p.zone !== 'town') return notice(p, 'Das Depot ist nur in der Stadt.');
+    if (!p.storage) p.storage = { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 };
+    const dir = d && d.dir;
+    const mat = d && d.mat;
+    if ((dir !== 'in' && dir !== 'out') || !['gold', 'essence', 'potions', 'speedPotions'].includes(mat)) return;
+    const amount = d.all ? Infinity : Math.max(1, Math.min(1000000, Number(d.amount) || 0));
+    if (!isFinite(amount)) {
+      if (dir === 'in') { p.storage[mat] += p[mat] || 0; p[mat] = 0; }
+      else { p[mat] = (p[mat] || 0) + p.storage[mat]; p.storage[mat] = 0; }
+    } else {
+      const moved = Math.min(amount, dir === 'in' ? (p[mat] || 0) : p.storage[mat]);
+      if (moved <= 0) return;
+      if (dir === 'in') { p[mat] -= moved; p.storage[mat] += moved; }
+      else { p.storage[mat] -= moved; p[mat] = (p[mat] || 0) + moved; }
+    }
+    sendProfile(p); saveAccountProgress(p);
+  });
+
+  socket.on('storageSell', (d) => {
+    const p = players[socket.id];
+    if (!p || p.zone !== 'town') return notice(p, 'Das Depot ist nur in der Stadt.');
+    if (!p.storage || !p.storage.items) return;
+    const idx = p.storage.items.findIndex(it => it.id === (d && d.id));
+    if (idx < 0) return;
+    const it = p.storage.items.splice(idx, 1)[0];
+    const g = sellValue(it);
+    p.gold += g;
+    sendProfile(p); saveAccountProgress(p);
+    notice(p, `💰 ${it.name} verkauft: +${g} Gold`);
   });
 
   socket.on('skillUp', (d) => {
