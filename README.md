@@ -95,7 +95,8 @@ Im Menü unter "Dungeon wählen" kannst du jederzeit in niedrigere Dungeons wech
 | Eishöhlen | 25 | Höhle | Troll, Schleim, Skelett, Hexer, Säurespucker |
 | Vulkan-Festung | 35 | grosse Hallen | Troll, Dämon, Skelett, Hexer |
 | Der Abgrund | 50 | Labyrinth | Dämon, Troll, Hexer, Säurespucker |
-| Obsidian-Thron | 65 | grosse Hallen | Dämon, Troll, Hexer, Säurespucker |
+| Obsidian-Thron | 65 | grosse Hallen | Obsidianritter, Nichtshetzer, Unheilbote, Dämon, Hexer, Säurespucker |
+| Aschenthron | 80 | grosse Hallen | Sensenmann, Obsidianritter, Unheilbote, Nichtshetzer, Dämon |
 
 Die Werte (Level, Stärke, Monster) stehen oben in `server.js` in `DUNGEON_TIER_DEFS` und lassen sich dort anpassen.
 Die Minimap oben rechts zeigt nur den von dir erkundeten Bereich (Unerforschtes bleibt verborgen, bis du in die Nähe kommst) mit dir (weiss), anderen Spielern (blau), dem Boss (rot) und Truhen.
@@ -117,6 +118,8 @@ Jeder Spieler hat immer drei offene Quests (Monster besiegen, bestimmte Monstera
 Boss besiegen, Spieler in der Arena besiegen). Belohnungen (Gold, XP, Tränke) wachsen mit dem Dungeon, der zu deinem Level passt.
 Nicht passende Quests lassen sich mit "Tauschen" ersetzen. Der Fortschritt wird in der Datenbank gespeichert.
 
+**Tagesquest (⭐):** Jeden Tag wartet eine extra Quest mit 1,5-facher Belohnung plus 10 Essenz. Sie erscheint zusätzlich zu den drei normalen Quests und kann nicht getauscht werden.
+
 ## Charakter, Ausrüstung und Handwerk (Taste C)
 
 - **Ausrüstung:** Waffe, Rüstung und Ring in vier Seltenheiten (Gewöhnlich, Selten, Episch, Legendär). Sie fallen von Monstern (5%), aus Truhen (25%) und von Bossen (3 Stück, mindestens eines episch). Bis zu 30 im Inventar, volle Taschen werden automatisch verkauft.
@@ -124,16 +127,24 @@ Nicht passende Quests lassen sich mit "Tauschen" ersetzen. Der Fortschritt wird 
 - **Essenz (✦):** fällt bei jedem besiegten Monster, Bosse geben 25. Damit werden Gegenstände verbessert und Tränke hergestellt.
 - **Fertigkeiten:** 1 Punkt pro Levelaufstieg für Schnelle Erholung, Kampfkunst, Zähigkeit und Goldnase (je bis Stufe 5). Zurücksetzen kostet 200 Gold.
 - **Aussehen:** Farben und Hüte für Gold, dazu ein Wolf als Begleiter (400 Gold), der Gegner in der Nähe angreift.
+- **Statistik:** Neuer Reiter mit allen persönlichen Statistiken und dem Erfolgs-Fortschritt.
+
+## Depot (nur in der Stadt, NPC Verwalterin Lyra)
+
+Persönliches Lager für Gegenstände (bis 60) und Ressourcen (Gold, Essenz, Heil- und Tempo-Tränke). Einlagern,
+entnehmen, in Mengen oder komplett – alles bleibt auch nach dem Ausloggen in der Datenbank. Gegenstände lassen
+sich direkt aus dem Depot verkaufen. So geht keine Beute beim Dungeon-Hopping verloren.
 
 ## Erfolge, Rangliste, Tagesbelohnung
 
-18 Erfolge mit Goldbelohnung. Rangliste (Level, Kills, Bosse, Arena) kommt direkt aus der Datenbank. Wer sich täglich anmeldet, bekommt eine Belohnung, die bis zur 7-Tage-Serie wächst.
+26 Erfolge mit Goldbelohnung. Rangliste (Level, Kills, Bosse, Arena) kommt direkt aus der Datenbank. Wer sich täglich anmeldet, bekommt eine Belohnung, die bis zur 7-Tage-Serie wächst.
 
 ## Soziales
 
 - **Gruppen** bis 4 Spieler: Mitglieder in der Nähe bekommen 50% XP und Quest-Fortschritt, eigener Chat mit `/g Text`.
 - **Freundesliste** (bis 50) mit Online-Anzeige, Gruppeneinladung und Teleport-Anfrage.
 - **Handel:** Im Reiter Ausrüstung bei einem Gegenstand auf "Handeln" klicken. Der andere sieht Werte und Preis und muss zustimmen.
+- **Gildenbank 🏦:** Gemeinsames Lager pro Gilde (bis 100 Gegenstände + Gold), für alle Mitglieder. Öffnen über das Gilden-Panel (Soziales → Gilde → Bank).
 - Pro Account ist nur eine Sitzung gleichzeitig möglich, eine zweite Anmeldung beendet die erste. Das verhindert Gegenstands-Duplikate.
 
 ## Gefahren und Ereignisse
@@ -223,7 +234,7 @@ Wird im Browser erzeugt, ohne Dateien: Jeder Dungeon, die Arena und der Boss-Rau
 ## Update: Stadt, Tresore, Wiedergeburt, Raid & Saison
 
 **Hub-Stadt** (Menü → 🏘️ Zur Stadt oder Taste G): sicherer Ort mit Heilbrunnen und sechs NPCs (Taste F oder Button):
-Händler (Shop), Schmied (Ausrüstung/Verbessern), Questgeberin, Herold (Raid & Saison), Meister der Wiedergeburt, Werkstatt (Handwerk).
+Händler (Shop), Schmied (Ausrüstung/Verbessern), Questgeberin, Herold (Raid & Saison), Meister der Wiedergeburt, Werkstatt (Handwerk), Gaukler Finn (Zufalls-Buffs), Verwalterin Lyra (Depot).
 
 **Dungeon-Mechaniken** (in jeder Stufe):
 - Stachelfallen: 0,6 s Warnblinken, dann 0,8 s aktiv, 7 % deines max. Lebens als Schaden.

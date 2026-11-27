@@ -69,6 +69,7 @@ async function createAccount(username, passwordHash, cls) {
     inventory: [], equipment: {}, skills: {}, essence: 0, cosmetics: {}, pet: null,
     stats: {}, achievements: [], daily: {}, friends: [], guild: null,
     keys: 0, prestige: 0, season: { id: '', points: 0 }, week: { id: '', points: 0 }, bossBest: {},
+    storage: { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 },
     createdAt: new Date()
   };
   if (accountsCol) await accountsCol.insertOne(doc);
@@ -86,7 +87,9 @@ async function saveAccountProgress(p) {
         inventory: p.inventory || [], equipment: p.equipment || {}, skills: p.skills || {}, essence: p.essence || 0,
         cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null,
         keys: p.keys || 0, prestige: p.prestige || 0, season: p.season || { id: '', points: 0 },
-        week: p.week || { id: '', points: 0 }, bossBest: p.bossBest || {}
+        week: p.week || { id: '', points: 0 }, bossBest: p.bossBest || {},
+        storage: p.storage || { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 },
+        dailyQuest: p.dailyQuest || null
       } }
     );
   } catch (err) {
@@ -394,8 +397,11 @@ const DUNGEON_TIER_DEFS = [
     pool: [['demon', 5], ['troll', 3], ['caster', 3], ['spitter', 2]],
     theme: { wall: '#3a2350', wallTop: '#251538', floorA: '#150d20', floorB: '#1a1128' } },
   { key: 'tier7', name: 'Obsidian-Thron', minLevel: 65, gen: { type: 'rooms', gridW: 16, gridH: 4, cellSize: 15 }, monsterMult: 11.5, dmgMult: 5.8, lootMult: 5.8,
-    pool: [['demon', 4], ['troll', 3], ['caster', 4], ['spitter', 3]],
-    theme: { wall: '#23232c', wallTop: '#121218', floorA: '#0c0c11', floorB: '#101017' } }
+    pool: [['obsidianKnight', 3], ['voidStalker', 3], ['doomHerald', 3], ['demon', 2], ['caster', 2], ['spitter', 2]],
+    theme: { wall: '#23232c', wallTop: '#121218', floorA: '#0c0c11', floorB: '#101017' } },
+  { key: 'tier8', name: 'Aschenthron', minLevel: 80, gen: { type: 'rooms', gridW: 16, gridH: 4, cellSize: 15 }, monsterMult: 15, dmgMult: 6.5, lootMult: 6.5,
+    pool: [['sensenmann', 3], ['obsidianKnight', 3], ['doomHerald', 3], ['voidStalker', 2], ['demon', 2]],
+    theme: { wall: '#2e1a1a', wallTop: '#180d0d', floorA: '#120a0a', floorB: '#170d0d' } }
 ];
 const DUNGEON_TIERS = {};
 const FEATURES = {};   // zone -> { vaults, secrets, trapMap }
@@ -447,7 +453,8 @@ const TOWN_NPCS = [
   { id: 'herald',  name: 'Herold Torben',      icon: '🐉', panel: 'raid',    ...tileCenter(31, 18) },
   { id: 'rebirth', name: 'Meister der Wiedergeburt', icon: '⭐', panel: 'rebirth', ...tileCenter(20, 5) },
   { id: 'craft',   name: 'Werkstatt',           icon: '🔨', panel: 'craft',   ...tileCenter(20, 18) },
-  { id: 'joker',   name: 'Gaukler Finn',        icon: '🤡', panel: 'buff',    ...tileCenter(35, 11) }
+  { id: 'joker',   name: 'Gaukler Finn',        icon: '🤡', panel: 'buff',    ...tileCenter(35, 11) },
+  { id: 'depot',   name: 'Verwalterin Lyra',    icon: '📦', panel: 'depot',   ...tileCenter(26, 11) }
 ];
 
 function mapFor(zone) {
@@ -516,10 +523,10 @@ const SHOP_ITEMS = {
   hp: { label: '🛡️ Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
   speed: { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
 };
-// Trinkgeld-Links: hier die eigenen URLs eintragen (z.B. PayPal.Me oder Ko-fi).
-// Solange leer, zeigt der Client "demnächst" an.
-const DONATE_LINKS = { paypal: '', kofi: '' };
-const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert' };
+// Trinkgeld-Link: hier die eigene Ko-fi-URL eintragen (z.B. 'https://ko-fi.com/name').
+// Solange leer, wird die Trinkgeld-Sektion im Shop ausgeblendet.
+const DONATE_LINKS = { kofi: '' };
+const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert', gg: 'gratuliert', hello: 'grüßt' };
 function shopCost(itemKey, currentCount) {
   const def = SHOP_ITEMS[itemKey];
   return def.baseCost + def.scale * currentCount;
@@ -548,6 +555,10 @@ const MONSTER_TYPES = {
   archer:  { name: 'Bogenschütze', hp: 45, dmg: 11, speed: 0.95, xp: 22, range: 260, cooldown: 1700, color: '#c9a66b', radius: 11, ranged: { speed: 6, life: 60, color: '#f1e3b0' } },
   caster:  { name: 'Hexer', hp: 60, dmg: 17, speed: 0.8, xp: 38, range: 300, cooldown: 2300, color: '#9b4dca', radius: 12, effect: 'burn', ranged: { speed: 4.5, life: 80, color: '#ff8a3c' } },
   spitter: { name: 'Säurespucker', hp: 70, dmg: 13, speed: 0.7, xp: 30, range: 240, cooldown: 2000, color: '#7bd05a', radius: 13, effect: 'poison', ranged: { speed: 4, life: 75, color: '#8fff6b' } },
+  sensenmann:  { name: 'Sensenmann', hp: 300, dmg: 52, speed: 1.4, xp: 200, range: 34, cooldown: 900, color: '#1c1c26', radius: 15, effect: 'slow' },
+  obsidianKnight: { name: 'Obsidianritter', hp: 340, dmg: 46, speed: 1.0, xp: 170, range: 36, cooldown: 1100, color: '#3d3d52', radius: 17, effect: 'slow' },
+  voidStalker:   { name: 'Nichtshetzer', hp: 150, dmg: 30, speed: 1.9, xp: 120, range: 30, cooldown: 800, color: '#5a2a7a', radius: 12, effect: 'poison' },
+  doomHerald:    { name: 'Unheilbote', hp: 210, dmg: 38, speed: 0.9, xp: 155, range: 290, cooldown: 2100, color: '#8a1f1f', radius: 14, effect: 'burn', ranged: { speed: 5, life: 85, color: '#ff4d4d' } },
   raidboss: { name: 'Weltenfresser', hp: 1, dmg: 38, speed: 1.1, xp: 0, range: 58, cooldown: 1000, color: '#7d3cff', radius: 44 },
   boss:   { name: 'Dungeon-Wächter', hp: 900, dmg: 22, speed: 1.0, xp: 400, range: 48, cooldown: 1100, color: '#c0392b', radius: 26 }
 };
@@ -1205,7 +1216,7 @@ function useAbility(p) {
 }
 
 // ---------------- Quests ----------------
-const MONSTER_NAMES_PL = { goblin: 'Goblins', ork: 'Orks', slime: 'Schleime', bat: 'Fledermäuse', skeleton: 'Skelette', troll: 'Trolle', demon: 'Dämonen', archer: 'Bogenschützen', caster: 'Hexer', spitter: 'Säurespucker' };
+const MONSTER_NAMES_PL = { goblin: 'Goblins', ork: 'Orks', slime: 'Schleime', bat: 'Fledermäuse', skeleton: 'Skelette', troll: 'Trolle', demon: 'Dämonen', archer: 'Bogenschützen', caster: 'Hexer', spitter: 'Säurespucker', obsidianKnight: 'Obsidianritter', voidStalker: 'Nichtshetzer', doomHerald: 'Unheilboten', sensenmann: 'Sensenmänner' };
 const QUEST_TYPES = ['kill', 'killType', 'chest', 'gold', 'boss', 'pvp'];
 const QUEST_COUNT = 3;
 
@@ -1259,8 +1270,53 @@ function ensureQuests(p) {
   while (p.quests.length < QUEST_COUNT) p.quests.push(makeQuest(p, p.quests));
 }
 
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function sanitizeDailyQuest(q) {
+  if (!q || typeof q !== 'object') return null;
+  if (q.done === true) return { done: true, day: typeof q.day === 'string' ? q.day.slice(0, 10) : '' };
+  if (!QUEST_TYPES.includes(q.type) || !Number.isFinite(q.target) || q.target <= 0 || typeof q.text !== 'string') return null;
+  return {
+    id: String(q.id || ''), type: q.type, sub: q.sub ? String(q.sub) : undefined, target: q.target,
+    progress: Math.min(Math.max(0, Number(q.progress) || 0), q.target), text: q.text.slice(0, 80),
+    gold: Math.max(0, Number(q.gold) || 0), xp: Math.max(0, Number(q.xp) || 0), potions: Math.max(0, Number(q.potions) || 0),
+    day: typeof q.day === 'string' ? q.day.slice(0, 10) : '', daily: true
+  };
+}
+
+function makeDailyQuest(p) {
+  const existing = [...(p.quests || []), ...(p.dailyQuest && p.dailyQuest.daily ? [p.dailyQuest] : [])];
+  const q = makeQuest(p, existing);
+  q.gold = Math.round(q.gold * 1.5);
+  q.xp = Math.round(q.xp * 1.5);
+  q.potions = (q.potions || 0) + 1;
+  q.day = todayStr();
+  q.daily = true;
+  return q;
+}
+
+function ensureDailyQuest(p) {
+  const today = todayStr();
+  if (p.dailyQuest && p.dailyQuest.day === today) return;
+  p.dailyQuest = makeDailyQuest(p);
+}
+
+function completeDailyQuest(p) {
+  const q = p.dailyQuest;
+  addSeasonPoints(p, 12);
+  p.gold += q.gold;
+  p.potions += q.potions;
+  p.essence += 10;
+  grantXp(p, q.xp);
+  p.stats.questsDone++;
+  checkAchievements(p);
+  p.dailyQuest = { done: true, day: q.day };
+  io.to(p.id).emit('questDone', { text: '⭐ ' + q.text, gold: q.gold, xp: q.xp, potions: q.potions });
+  saveAccountProgress(p);
+}
+
 function sendQuests(p) {
-  io.to(p.id).emit('quests', p.quests);
+  io.to(p.id).emit('quests', p.quests.concat(p.dailyQuest && p.dailyQuest.daily ? [p.dailyQuest] : []));
 }
 
 function completeQuest(p, i) {
@@ -1289,11 +1345,23 @@ function questProgress(p, event, amount, sub) {
     changed = true;
     if (q.progress >= q.target) completeQuest(p, i);
   }
+  const dq = p.dailyQuest;
+  if (dq && dq.daily && dq.progress < dq.target) {
+    let match;
+    if (event === 'kill') match = dq.type === 'kill' || (dq.type === 'killType' && dq.sub === sub) || (dq.type === 'boss' && sub === 'boss');
+    else match = dq.type === event;
+    if (match) {
+      dq.progress = Math.min(dq.target, dq.progress + amount);
+      changed = true;
+      if (dq.progress >= dq.target) completeDailyQuest(p);
+    }
+  }
   if (changed) sendQuests(p);
 }
 
 // ---------------- Fortschritt: Ausruestung, Fertigkeiten, Handwerk, Erfolge ----------------
 const INVENTORY_MAX = 30;
+const STORAGE_MAX = 60;
 const UPGRADE_MAX = 5;
 const SLOTS = ['weapon', 'armor', 'ring'];
 const RARITIES = [
@@ -1315,8 +1383,10 @@ const SKILL_DEFS = {
   greed: { name: 'Goldnase', desc: '+6% Gold aus Monstern und Truhen', max: 5 }
 };
 const RECIPES = {
-  heal3:  { name: '3 Heiltränke', essence: 6 },
-  speed2: { name: '2 Tempo-Tränke', essence: 8 }
+  heal3:  { name: '3 Heiltränke', essence: 6, give: { potions: 3 } },
+  heal5:  { name: '5 Heiltränke', essence: 10, give: { potions: 5 } },
+  speed2: { name: '2 Tempo-Tränke', essence: 8, give: { speedPotions: 2 } },
+  speed3: { name: '3 Tempo-Tränke', essence: 12, give: { speedPotions: 3 } }
 };
 const ACHIEVEMENTS = [
   { id: 'k100', name: 'Monsterjäger I', desc: '100 Monster besiegen', stat: 'kills', thr: 100, gold: 100 },
@@ -1341,7 +1411,15 @@ const ACHIEVEMENTS = [
   { id: 's1', name: 'Spürnase', desc: '1 Geheimraum entdecken', stat: 'secrets', thr: 1, gold: 300 },
   { id: 'r1', name: 'Weltenfresser-Jäger', desc: '1 Raid-Boss besiegen', stat: 'raidKills', thr: 1, gold: 1500 },
   { id: 'r10', name: 'Raid-Veteran', desc: '10 Raid-Bosse besiegen', stat: 'raidKills', thr: 10, gold: 8000 },
-  { id: 'pr1', name: 'Wiedergeboren', desc: 'Die Wiedergeburt abschließen', stat: 'prestige', thr: 1, gold: 2000 }
+  { id: 'pr1', name: 'Wiedergeboren', desc: 'Die Wiedergeburt abschließen', stat: 'prestige', thr: 1, gold: 2000 },
+  { id: 'l75', name: 'Hochburgbezwinger', desc: 'Level 75 erreichen', stat: 'level', thr: 75, gold: 6000 },
+  { id: 'k25000', name: 'Vernichter', desc: '25000 Monster besiegen', stat: 'kills', thr: 25000, gold: 12000 },
+  { id: 'b100', name: 'Legendärer Jäger', desc: '100 Bosse besiegen', stat: 'bossKills', thr: 100, gold: 15000 },
+  { id: 'c250', name: 'Kistenkönig', desc: '250 Truhen öffnen', stat: 'chests', thr: 250, gold: 5000 },
+  { id: 'g200k', name: 'Millionär', desc: '200000 Gold verdienen', stat: 'goldEarned', thr: 200000, gold: 8000 },
+  { id: 's5', name: 'Geheimnisjäger', desc: '5 Geheimräume entdecken', stat: 'secrets', thr: 5, gold: 1500 },
+  { id: 'v6', name: 'Bankknacker', desc: '6 Tresore öffnen', stat: 'vaults', thr: 6, gold: 1200 },
+  { id: 'd50', name: 'Organisiert', desc: '50 Dinge im Depot einlagern', stat: 'deposits', thr: 50, gold: 400 }
 ];
 const ACH_IDS = new Set(ACHIEVEMENTS.map(a => a.id));
 const COSMETICS = {
@@ -1355,7 +1433,9 @@ const COSMETICS = {
     white:  { name: 'Weiss', hex: '#f2f2f2', price: 150 },
     orange: { name: 'Orange', hex: '#ff9f43', price: 150 },
     cyan:   { name: 'Cyan', hex: '#3fd2ff', price: 150 },
-    silver: { name: 'Silber', hex: '#cfd6e6', price: 200 }
+    silver: { name: 'Silber', hex: '#cfd6e6', price: 200 },
+    lava:   { name: 'Lava', hex: '#ff6a00', price: 250 },
+    toxic:  { name: 'Toxisch', hex: '#b6ff3c', price: 250 }
   },
   hat: {
     cap:     { name: 'Mütze', icon: '🧢', price: 200 },
@@ -1368,7 +1448,9 @@ const COSMETICS = {
     vampire: { name: 'Vampir', icon: '🧛', price: 450 },
     cowboy:  { name: 'Cowboy', icon: '🤠', price: 300 },
     pumpkin: { name: 'Kürbis', icon: '🎃', price: 300 },
-    halo:    { name: 'Heiligenschein', icon: '😇', price: 250 }
+    halo:    { name: 'Heiligenschein', icon: '😇', price: 250 },
+    crown2:  { name: 'Goldene Krone', icon: '💛', price: 800 },
+    wizard2: { name: 'Runehut', icon: '🔮', price: 500 }
   }
 };
 const PET_COST = 400;
@@ -1451,7 +1533,7 @@ function profileFromAccount(a) {
     const it = sanitizeItem(a.equipment && a.equipment[slot]);
     equipment[slot] = it && it.slot === slot ? it : null;
   }
-  const stats = { kills: 0, bossKills: 0, pvpKills: 0, chests: 0, goldEarned: 0, questsDone: 0, vaults: 0, secrets: 0, raidKills: 0 };
+  const stats = { kills: 0, bossKills: 0, pvpKills: 0, chests: 0, goldEarned: 0, questsDone: 0, vaults: 0, secrets: 0, raidKills: 0, deposits: 0 };
   for (const k in stats) stats[k] = Math.max(0, Number(a.stats && a.stats[k]) || 0);
   const owned = { color: [], hat: [] };
   for (const kind of ['color', 'hat']) {
@@ -1472,11 +1554,22 @@ function profileFromAccount(a) {
     guild: typeof a.guild === 'string' ? a.guild.slice(0, 40) : null,
     friends: (Array.isArray(a.friends) ? a.friends : []).filter(x => typeof x === 'string' && x.length >= 3 && x.length <= 20).slice(0, 50),
     daily: { last: a.daily && typeof a.daily.last === 'string' ? a.daily.last : '', streak: Math.max(0, Number(a.daily && a.daily.streak) || 0) },
+    dailyQuest: sanitizeDailyQuest(a.dailyQuest),
     keys: Math.max(0, Math.min(99, Number(a.keys) || 0)),
     prestige: Math.max(0, Math.min(PRESTIGE_MAX, Number(a.prestige) || 0)),
     season: { id: a.season && typeof a.season.id === 'string' ? a.season.id.slice(0, 10) : '', points: Math.max(0, Number(a.season && a.season.points) || 0) },
     week: { id: a.week && typeof a.week.id === 'string' ? a.week.id.slice(0, 10) : '', points: Math.max(0, Number(a.week && a.week.points) || 0) },
-    bossBest: (a.bossBest && typeof a.bossBest === 'object') ? a.bossBest : {}
+    bossBest: (a.bossBest && typeof a.bossBest === 'object') ? a.bossBest : {},
+    storage: (() => {
+      const s = a.storage && typeof a.storage === 'object' ? a.storage : {};
+      return {
+        items: (Array.isArray(s.items) ? s.items : []).map(sanitizeItem).filter(Boolean).slice(0, STORAGE_MAX),
+        gold: Math.max(0, Number(s.gold) || 0),
+        essence: Math.max(0, Number(s.essence) || 0),
+        potions: Math.max(0, Number(s.potions) || 0),
+        speedPotions: Math.max(0, Number(s.speedPotions) || 0)
+      };
+    })()
   };
 }
 function sendProfile(p) {
@@ -1484,7 +1577,14 @@ function sendProfile(p) {
     inventory: p.inventory.map(withEff),
     equipment: { weapon: withEff(p.equipment.weapon), armor: withEff(p.equipment.armor), ring: withEff(p.equipment.ring) },
     skills: p.skills, skillPoints: skillPointsFree(p), cosmetics: p.cosmetics, pet: p.pet,
-    stats: p.stats, achievements: p.achievements, daily: p.daily, prestige: p.prestige || 0
+    stats: p.stats, achievements: p.achievements, daily: p.daily, prestige: p.prestige || 0,
+    storage: {
+      items: (p.storage && p.storage.items ? p.storage.items : []).map(withEff),
+      gold: p.storage ? p.storage.gold : 0,
+      essence: p.storage ? p.storage.essence : 0,
+      potions: p.storage ? p.storage.potions : 0,
+      speedPotions: p.storage ? p.storage.speedPotions : 0
+    }
   });
 }
 function giveItem(p, item) {
@@ -1663,9 +1763,10 @@ setInterval(() => {
 
 // ---------------- Statuseffekte, Dungeon-Bosse, Zufallsereignisse ----------------
 const EFFECT_MS = { slow: 3000, poison: 5000, burn: 4000 };
-const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher', tier7: 'Obsidianfürst' };
+const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher', tier7: 'Obsidianfürst', tier8: 'Aschenfürst' };
 const TIER_BOSS_INTERVAL_MS = 8 * 60 * 1000;
 const tierBosses = {};
+const tierBossNextAt = {};
 
 function damagePlayer(target, dmg, src) {
   if (target.dead) return;
@@ -1736,6 +1837,7 @@ function spawnTierBoss(zone) {
     hp, maxHp: hp, x, y, lastAttack: 0, targetId: null, homeX: x, homeY: y
   };
   tierBosses[zone] = id;
+  tierBossNextAt[zone] = Date.now() + TIER_BOSS_INTERVAL_MS;
   announceTo(p => p.level >= tier.minLevel, `👑 ${name} ist in ${tier.name} erschienen!`);
 }
 
@@ -1810,6 +1912,7 @@ function randomEvent() {
 })();
 DUNGEON_TIER_DEFS.forEach((def, i) => {
   setTimeout(() => {
+    tierBossNextAt[def.key] = Date.now() + TIER_BOSS_INTERVAL_MS;
     spawnTierBoss(def.key);
     setInterval(() => spawnTierBoss(def.key), TIER_BOSS_INTERVAL_MS);
   }, 60000 + i * 80000);
@@ -1859,6 +1962,7 @@ const BOSS_SPECIALS = {
   tier5: ['rockfall', 'fan', 'enrage', 'volley'],
   tier6: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
   tier7: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
+  tier8: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
   bossroom: ['summon', 'fan', 'enrage', 'volley'],
   raid: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal']
 };
@@ -1867,6 +1971,7 @@ const BOSS_FAN = {
   tier5: { effect: 'burn', color: '#ff8a3c' },
   tier6: { effect: 'poison', color: '#8fff6b' },
   tier7: { effect: 'burn', color: '#ff5d8a' },
+  tier8: { effect: 'burn', color: '#ffb03c' },
   raid: { effect: 'burn', color: '#c77dff' }
 };
 const BOSS_ADD_MAX = 8;
@@ -1991,17 +2096,27 @@ const GUILD_COST = 500;
 function guildLevel(g) { return Math.min(10, Math.floor(Math.sqrt(Math.max(0, g.xp || 0) / 100))); }
 const guildCache = new Map();    // key -> { key, name, tag, leader, members:[username] }
 const guildInvites = {};         // Ziel-Socket -> { fromId, guild, expires }
+const GUILD_BANK_MAX = 100;
+
+function guildBank(g) {
+  if (!g.bank || typeof g.bank !== 'object') g.bank = { items: [], gold: 0 };
+  if (!Array.isArray(g.bank.items)) g.bank.items = [];
+  g.bank.items = g.bank.items.map(sanitizeItem).filter(Boolean).slice(0, GUILD_BANK_MAX);
+  g.bank.gold = Math.max(0, Number(g.bank.gold) || 0);
+  return g.bank;
+}
 
 async function loadGuild(key) {
   if (!key) return null;
-  if (guildCache.has(key)) return guildCache.get(key);
+  if (guildCache.has(key)) { const c = guildCache.get(key); guildBank(c); return c; }
   if (!guildsCol) return null;
   const g = await guildsCol.findOne({ key });
-  if (g) guildCache.set(key, g);
+  if (g) { guildBank(g); guildCache.set(key, g); }
   return g || null;
 }
 async function saveGuild(g) {
-  if (guildsCol) await guildsCol.updateOne({ key: g.key }, { $set: { name: g.name, tag: g.tag, leader: g.leader, members: g.members, xp: g.xp || 0, level: guildLevel(g) } });
+  const b = guildBank(g);
+  if (guildsCol) await guildsCol.updateOne({ key: g.key }, { $set: { name: g.name, tag: g.tag, leader: g.leader, members: g.members, xp: g.xp || 0, level: guildLevel(g), bank: { items: b.items, gold: b.gold } } });
 }
 function guildOnline(g) { return g.members.map(u => findOnline(u)).filter(Boolean); }
 function sendGuild(p) {
@@ -2134,6 +2249,7 @@ io.on('connection', (socket) => {
       recomputeStats(players[socket.id]);
       players[socket.id].hp = players[socket.id].maxHp;
       ensureQuests(players[socket.id]);
+      ensureDailyQuest(players[socket.id]);
       {
         const me0 = players[socket.id];
         const g0 = me0.guild ? await loadGuild(me0.guild) : null;
@@ -2144,7 +2260,8 @@ io.on('connection', (socket) => {
       const dungeonTiersPayload = {};
       for (const key in DUNGEON_TIERS) {
         const t = DUNGEON_TIERS[key];
-        dungeonTiersPayload[key] = { name: t.name, minLevel: t.minLevel, rows: t.rows, theme: t.theme, traps: t.traps };
+        dungeonTiersPayload[key] = { name: t.name, minLevel: t.minLevel, rows: t.rows, theme: t.theme, traps: t.traps,
+          monsters: [...new Set((t.pool || []).map(([ty]) => MONSTER_TYPES[ty] ? MONSTER_TYPES[ty].name : ty))] };
       }
       socket.emit('init', {
         you: socket.id,
@@ -2403,10 +2520,72 @@ io.on('connection', (socket) => {
     if (!p || !r) return;
     if (p.essence < r.essence) return notice(p, `Du brauchst ${r.essence} Essenz.`);
     p.essence -= r.essence;
-    if (d.recipe === 'heal3') p.potions += 3;
-    if (d.recipe === 'speed2') p.speedPotions += 2;
+    for (const k in (r.give || {})) p[k] = (p[k] || 0) + r.give[k];
     saveAccountProgress(p);
     notice(p, `🔨 Hergestellt: ${r.name}`);
+  });
+
+  socket.on('storageMove', (d) => {
+    const p = players[socket.id];
+    if (!p || p.zone !== 'town') return notice(p, 'Das Depot ist nur in der Stadt.');
+    if (!p.storage) p.storage = { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 };
+    const dir = d && d.dir;
+    if (dir !== 'in' && dir !== 'out') return;
+    if (d.all) {
+      const from = dir === 'in' ? p.inventory : p.storage.items;
+      const to = dir === 'in' ? p.storage.items : p.inventory;
+      const cap = dir === 'in' ? STORAGE_MAX : INVENTORY_MAX;
+      let moved = 0;
+      while (from.length && to.length < cap) { to.push(from.shift()); moved++; }
+      if (!moved) return notice(p, dir === 'in' ? 'Depot ist voll.' : 'Inventar ist voll.');
+      if (dir === 'in') { p.stats.deposits = (p.stats.deposits || 0) + moved; checkAchievements(p); }
+      sendProfile(p); saveAccountProgress(p);
+      notice(p, `📦 ${moved} Gegenstand${moved === 1 ? '' : 'e'} ${dir === 'in' ? 'eingelagert' : 'entnommen'}.`);
+      return;
+    }
+    const id = d && d.itemId;
+    const from = dir === 'in' ? p.inventory : p.storage.items;
+    const to = dir === 'in' ? p.storage.items : p.inventory;
+    const cap = dir === 'in' ? STORAGE_MAX : INVENTORY_MAX;
+    const idx = from.findIndex(it => it.id === id);
+    if (idx < 0) return;
+    if (to.length >= cap) return notice(p, dir === 'in' ? 'Depot ist voll.' : 'Inventar ist voll.');
+    to.push(from.splice(idx, 1)[0]);
+    if (dir === 'in') { p.stats.deposits = (p.stats.deposits || 0) + 1; checkAchievements(p); }
+    sendProfile(p); saveAccountProgress(p);
+  });
+
+  socket.on('storageRes', (d) => {
+    const p = players[socket.id];
+    if (!p || p.zone !== 'town') return notice(p, 'Das Depot ist nur in der Stadt.');
+    if (!p.storage) p.storage = { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 };
+    const dir = d && d.dir;
+    const mat = d && d.mat;
+    if ((dir !== 'in' && dir !== 'out') || !['gold', 'essence', 'potions', 'speedPotions'].includes(mat)) return;
+    const amount = d.all ? Infinity : Math.max(1, Math.min(1000000, Number(d.amount) || 0));
+    if (!isFinite(amount)) {
+      if (dir === 'in') { p.storage[mat] += p[mat] || 0; p[mat] = 0; }
+      else { p[mat] = (p[mat] || 0) + p.storage[mat]; p.storage[mat] = 0; }
+    } else {
+      const moved = Math.min(amount, dir === 'in' ? (p[mat] || 0) : p.storage[mat]);
+      if (moved <= 0) return;
+      if (dir === 'in') { p[mat] -= moved; p.storage[mat] += moved; p.stats.deposits = (p.stats.deposits || 0) + 1; checkAchievements(p); }
+      else { p.storage[mat] -= moved; p[mat] = (p[mat] || 0) + moved; }
+    }
+    sendProfile(p); saveAccountProgress(p);
+  });
+
+  socket.on('storageSell', (d) => {
+    const p = players[socket.id];
+    if (!p || p.zone !== 'town') return notice(p, 'Das Depot ist nur in der Stadt.');
+    if (!p.storage || !p.storage.items) return;
+    const idx = p.storage.items.findIndex(it => it.id === (d && d.id));
+    if (idx < 0) return;
+    const it = p.storage.items.splice(idx, 1)[0];
+    const g = sellValue(it);
+    p.gold += g;
+    sendProfile(p); saveAccountProgress(p);
+    notice(p, `💰 ${it.name} verkauft: +${g} Gold`);
   });
 
   socket.on('skillUp', (d) => {
@@ -2917,7 +3096,75 @@ io.on('connection', (socket) => {
     if (!p || !msg) return;
     if (!chatAllowed(p)) return;
     const text = String(msg).slice(0, 80);
+    if (text === '/roll') { io.emit('chat', { name: p.name, text: 'würfelt ' + (1 + Math.floor(Math.random() * 100)) + '!' }); return; }
+    if (text === '/flip') { io.emit('chat', { name: p.name, text: 'wirft eine Münze: ' + (Math.random() < 0.5 ? 'Kopf!' : 'Zahl!') }); return; }
     io.emit('chat', { name: p.name, text });
+  });
+
+  // ---- Gildenbank: gemeinsames Lager fuer alle Gildenmitglieder ----
+  socket.on('guildBankOpen', async () => {
+    const p = players[socket.id];
+    if (!p || !p.guild) return;
+    const g = await loadGuild(p.guild);
+    if (!g) return;
+    const b = guildBank(g);
+    socket.emit('guildBank', { items: b.items.map(withEff), gold: b.gold, max: GUILD_BANK_MAX });
+  });
+
+  socket.on('guildBankMove', async (d) => {
+    const p = players[socket.id];
+    if (!p || !p.guild) return;
+    const dir = d && d.dir;
+    if (dir !== 'in' && dir !== 'out') return;
+    const g = await loadGuild(p.guild);
+    if (!g) return;
+    const b = guildBank(g);
+    if (d.all) {
+      const from = dir === 'in' ? p.inventory : b.items;
+      const to = dir === 'in' ? b.items : p.inventory;
+      const cap = dir === 'in' ? GUILD_BANK_MAX : INVENTORY_MAX;
+      let moved = 0;
+      while (from.length && to.length < cap) { to.push(from.shift()); moved++; }
+      if (!moved) return notice(p, dir === 'in' ? 'Gildenbank ist voll.' : 'Inventar ist voll.');
+      sendProfile(p);
+      socket.emit('guildBank', { items: b.items.map(withEff), gold: b.gold, max: GUILD_BANK_MAX });
+      saveGuild(g);
+      notice(p, `🏦 ${moved} Gegenstand${moved === 1 ? '' : 'e'} ${dir === 'in' ? 'eingelagert' : 'entnommen'}.`);
+      return;
+    }
+    const from = dir === 'in' ? p.inventory : b.items;
+    const to = dir === 'in' ? b.items : p.inventory;
+    const cap = dir === 'in' ? GUILD_BANK_MAX : INVENTORY_MAX;
+    const idx = from.findIndex(it => it.id === (d && d.itemId));
+    if (idx < 0) return;
+    if (to.length >= cap) return notice(p, dir === 'in' ? 'Gildenbank ist voll.' : 'Inventar ist voll.');
+    to.push(from.splice(idx, 1)[0]);
+    sendProfile(p);
+    socket.emit('guildBank', { items: b.items.map(withEff), gold: b.gold, max: GUILD_BANK_MAX });
+    saveGuild(g);
+  });
+
+  socket.on('guildBankGold', async (d) => {
+    const p = players[socket.id];
+    if (!p || !p.guild) return;
+    const dir = d && d.dir;
+    if (dir !== 'in' && dir !== 'out') return;
+    const g = await loadGuild(p.guild);
+    if (!g) return;
+    const b = guildBank(g);
+    const amount = d.all ? Infinity : Math.max(1, Math.min(1000000, Number(d.amount) || 0));
+    if (!isFinite(amount)) {
+      if (dir === 'in') { b.gold += p.gold; p.gold = 0; }
+      else { p.gold += b.gold; b.gold = 0; }
+    } else {
+      const moved = Math.min(amount, dir === 'in' ? p.gold : b.gold);
+      if (moved <= 0) return;
+      if (dir === 'in') { p.gold -= moved; b.gold += moved; }
+      else { b.gold -= moved; p.gold += moved; }
+    }
+    sendProfile(p);
+    socket.emit('guildBank', { items: b.items.map(withEff), gold: b.gold, max: GUILD_BANK_MAX });
+    saveGuild(g);
   });
 
   // ---- Admin-Aktionen: serverseitig IMMER erneut gegen isAdmin geprueft ----
@@ -3264,7 +3511,7 @@ function leanOf(p) {
 function fullOf(p) {
   return Object.assign(leanOf(p), {
     xp: p.xp, xpNext: p.xpNext, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions,
-    speedBoostUntil: p.speedBoostUntil, abilityReadyAt: p.abilityReadyAt || 0, essence: p.essence,
+    speedBoostUntil: p.speedBoostUntil, abilityReadyAt: p.abilityReadyAt || 0, essence: p.essence, critUntil: p.critUntil || 0,
     upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed,
     keys: p.keys || 0, ability2ReadyAt: p.ability2ReadyAt || 0, guardUntil: p.guardUntil || 0, seasonPts: p.season ? p.season.points : 0,
     bossBest: p.bossBest || {}
@@ -3295,7 +3542,8 @@ function broadcastState() {
     xpRemaining: Math.max(0, xpEventUntil - now),
     bossAlive: !!(bossId && monsters[bossId]),
     raid: raid.active && monsters[raid.bossId] ? { hp: Math.round(monsters[raid.bossId].hp), maxHp: monsters[raid.bossId].maxHp, endsAt: raid.endsAt, joined: raid.joined.size } : null,
-    raidNextAt: raid.nextAt
+    raidNextAt: raid.nextAt,
+    tierBossNext: Object.fromEntries(Object.keys(tierBossNextAt).map(z => [z, { nextAt: tierBossNextAt[z], alive: !!(tierBosses[z] && monsters[tierBosses[z]]) }]))
   };
   const empty = { monsters: [], items: [], chests: [], projectiles: [] };
   for (const id in players) {
