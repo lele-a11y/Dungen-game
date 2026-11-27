@@ -3097,6 +3097,7 @@ io.on('connection', (socket) => {
     if (!chatAllowed(p)) return;
     const text = String(msg).slice(0, 80);
     if (text === '/roll') { io.emit('chat', { name: p.name, text: 'würfelt ' + (1 + Math.floor(Math.random() * 100)) + '!' }); return; }
+    if (text === '/flip') { io.emit('chat', { name: p.name, text: 'wirft eine Münze: ' + (Math.random() < 0.5 ? 'Kopf!' : 'Zahl!') }); return; }
     io.emit('chat', { name: p.name, text });
   });
 
