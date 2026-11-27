@@ -51,6 +51,7 @@ dann NICHT gespeichert.
    - Key: `MONGO_URI`
    - Value: der Connection-String aus Schritt 2 (MongoDB Atlas)
    - Optional, für Admin-Rechte: Key `ADMIN_USERNAMES`, Value z.B. `dein_benutzername` (mehrere Namen mit Komma trennen, z.B. `leo,max`). Wer sich mit einem dieser Benutzernamen einloggt, sieht im Spielmenü das 👑 Admin-Panel (Gold/Tränke verschenken, Server-Ansagen, Monsterwelle auslösen, alle heilen).
+   - Optional, Namens-Tags: `OWNER_USERNAMES` (👑 Owner, z.B. der Server-Besitzer) und `MOD_USERNAMES` (⭐ Moderator) — gleiche Schreibweise wie `ADMIN_USERNAMES`.supporter: true}` auf den Account in der MongoDB-Collection `accounts` setzen — der Tag erscheint beim nächsten Login. Ein Admin kann Supporter auch live im Admin-Panel verleihen.
 6. Deploy klicken. Nach ein paar Minuten bekommst du eine URL wie
    `https://leo-dungeon-rpg.onrender.com`
 

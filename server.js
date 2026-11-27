@@ -2174,6 +2174,21 @@ const lbCache = {};
 const ADMIN_USERNAMES = new Set(
   (process.env.ADMIN_USERNAMES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
 );
+const OWNER_USERNAMES = new Set(
+  (process.env.OWNER_USERNAMES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+);
+const MOD_USERNAMES = new Set(
+  (process.env.MOD_USERNAMES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+);
+const ROLE_TAGS = { owner: '👑 Owner', admin: '🛡 Admin', mod: '⭐ Mod', supporter: '☕ Supporter' };
+function roleFor(username, account) {
+  const u = String(username || '').toLowerCase();
+  if (OWNER_USERNAMES.has(u)) return 'owner';
+  if (ADMIN_USERNAMES.has(u)) return 'admin';
+  if (MOD_USERNAMES.has(u)) return 'mod';
+  if (account && account.supporter) return 'supporter';
+  return null;
+}
 
 // ---------------- Socket-Handling ----------------
 io.on('connection', (socket) => {
@@ -2261,6 +2276,7 @@ io.on('connection', (socket) => {
         upgHp: account.upgHp || 0,
         upgSpeed: account.upgSpeed || 0,
         isAdmin: ADMIN_USERNAMES.has(username),
+        role: roleFor(username, account),
         abilityReadyAt: 0,
         critUntil: 0,
         quests: sanitizeQuests(account.quests),
@@ -2838,6 +2854,18 @@ io.on('connection', (socket) => {
     if (name.length < 3) return;
     await accountsCol.updateOne({ username: name }, { $set: { banned: false } });
     notice(p, `${name} wurde entsperrt.`);
+  });
+
+  socket.on('adminSupporter', async (d) => {
+    const p = players[socket.id];
+    if (!p || !p.isAdmin || !accountsCol) return;
+    const name = (d && d.username ? String(d.username) : '').trim().toLowerCase().slice(0, 20);
+    const on = !!(d && d.on);
+    if (name.length < 3) return;
+    await accountsCol.updateOne({ username: name }, { $set: { supporter: on } });
+    const t = findOnline(name);
+    if (t) { t.role = roleFor(t.username, { supporter: on }); notice(t, on ? '☕ Du bist jetzt Supporter! Danke für deine Unterstützung!' : 'Dein Supporter-Status wurde entfernt.'); }
+    notice(p, `${name}: Supporter ${on ? 'verliehen' : 'entfernt'}.`);
   });
 
   socket.on('adminAction', (d) => {
@@ -3528,6 +3556,7 @@ function leanOf(p) {
     pet: p.pet, px: p.petPos ? Math.round(p.petPos.x) : null, py: p.petPos ? Math.round(p.petPos.y) : null,
     fx: fxFlags(p),
     tag: p.guildTag || null,
+    role: p.role || null,
     prestige: p.prestige || 0,
     party: p.partyId || null,
     partyLeader: !!(p.partyId && parties[p.partyId] && parties[p.partyId].leader === p.id)

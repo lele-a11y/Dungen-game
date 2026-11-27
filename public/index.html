@@ -525,6 +525,8 @@
       <div id="adminPlayers"></div>
       <input type="text" id="adminUnbanName" placeholder="Benutzername entsperren">
       <button class="adminSingleBtn" id="adminUnbanBtn" style="margin-bottom:0;">Entsperren</button>
+      <input type="text" id="adminSupName" placeholder="Supporter: Benutzername" style="margin-top:8px;">
+      <button class="adminSingleBtn" id="adminSupBtn" style="margin-bottom:0;">☕ Supporter verleihen</button>
     </div>
 
     <button id="adminClose">Schliessen</button>
@@ -1562,6 +1564,10 @@ document.getElementById('adminUnbanBtn').addEventListener('click', () => {
   const el = document.getElementById('adminUnbanName');
   if (el.value.trim()) { socket.emit('adminUnban', { username: el.value.trim() }); el.value = ''; }
 });
+document.getElementById('adminSupBtn').addEventListener('click', () => {
+  const el = document.getElementById('adminSupName');
+  if (el.value.trim()) { socket.emit('adminSupporter', { username: el.value.trim(), on: true }); el.value = ''; }
+});
 setInterval(() => { if (adminOpen) renderAdminPlayers(); }, 2000);
 document.getElementById('adminGoldAll').addEventListener('click', () => {
   const amount = parseInt(document.getElementById('adminGoldAmount').value, 10) || 50;
@@ -1983,6 +1989,8 @@ function addChat(text) {
 // ---------------- Rendering ----------------
 // ---------------- Grafik ----------------
 const TAU = Math.PI * 2;
+const ROLE_COLORS = { owner: '#ffd24d', admin: '#ff6b6b', mod: '#c678dd', supporter: '#4fc3f7' };
+const ROLE_LABELS = { owner: '👑 Owner', admin: '🛡 Admin', mod: '⭐ Mod', supporter: '☕ Supporter' };
 let gfxHigh = true;
 try { const gSaved = localStorage.getItem('dungeonGfx'); gfxHigh = gSaved ? gSaved !== 'low' : !isTouchDevice; } catch (err) { gfxHigh = !isTouchDevice; }
 function updateGfxBtn() { document.getElementById('menuOptionGfx').textContent = gfxHigh ? '🎨 Grafik: Hoch' : '🎨 Grafik: Niedrig (schneller)'; }
@@ -2166,6 +2174,9 @@ function drawHero(p, sx, sy, s, t) {
     ctx.fillStyle = '#1b1e26'; ctx.beginPath(); ctx.arc(ex + fx * 0.8, ey + fy * 0.8, 1.2, 0, TAU); ctx.fill();
   }
   if (p.hat) { ctx.font = '16px Verdana'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(p.hat, sx, by - 12); ctx.textBaseline = 'alphabetic'; }
+  if (p.role && ROLE_LABELS[p.role]) {
+    outlinedText(ROLE_LABELS[p.role], sx, by - (p.hat ? 38 : 27), ROLE_COLORS[p.role], 'bold 9px Verdana');
+  }
   outlinedText((p.prestige ? '★' + p.prestige + ' ' : '') + (p.tag ? '[' + p.tag + '] ' : '') + p.name + '  Lv' + p.level, sx, by - (p.hat ? 26 : 17), p.id === myId ? '#ffe9a8' : '#ffffff', 'bold 11px Verdana');
   hpBar(sx - 16, by + 15, 32, 4, p.hp / p.maxHp);
 }
