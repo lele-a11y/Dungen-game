@@ -419,6 +419,7 @@
       <span title="Essenz für Handwerk und Verbesserungen">✦ <span id="essenceTxt">0</span></span>
       <span title="Schlüssel für Tresortüren">🔑 <span id="keysTxt">0</span></span>
     </div>
+    <div id="buffHud" style="display:flex; gap:6px; font-size:11px;"></div>
     <div id="eventBadges" style="display:flex; gap:6px; margin-top:2px;"></div>
     <div id="questHud"></div>
     <div id="partyHud"></div>
@@ -1191,7 +1192,7 @@ function bigBody() {
     const rows = [
       ['⚔️ Monster besiegt', s.kills], ['👑 Bosse besiegt', s.bossKills], ['🥊 Spieler besiegt', s.pvpKills],
       ['📦 Truhen geöffnet', s.chests], ['💰 Gold verdient', s.goldEarned], ['📜 Quests erledigt', s.questsDone],
-      ['🔐 Tresore geöffnet', s.vaults], ['🕳️ Geheimräume', s.secrets], ['🐉 Raid-Bosse', s.raidKills]
+      ['🔐 Tresore geöffnet', s.vaults], ['🕳️ Geheimräume', s.secrets], ['🐉 Raid-Bosse', s.raidKills], ['📦 Depot-Einlagerungen', s.deposits]
     ];
     h += '<h3>Deine Statistiken</h3>';
     h += rows.map(([label, v]) => `<div class="itemRow"><div>${label}</div><div><b>${(v || 0).toLocaleString('de-DE')}</b></div></div>`).join('');
@@ -2866,6 +2867,14 @@ function updateHud(me) {
     document.getElementById('mAbility2').textContent = ab2.icon;
   }
   document.getElementById('keysTxt').textContent = me.keys || 0;
+  {
+    const now = Date.now() + serverOffset, buffs = [];
+    const addBuff = (until, icon, label) => { const l = (until || 0) - now; if (l > 0) buffs.push(`<span title="${label}">${icon} ${Math.ceil(l / 1000)}s</span>`); };
+    addBuff(me.speedBoostUntil, '⚡', 'Tempo-Boost');
+    addBuff(me.critUntil, '✨', 'Garantierter Krit');
+    addBuff(me.guardUntil, '🛡', 'Schadensreduktion');
+    document.getElementById('buffHud').innerHTML = buffs.join('');
+  }
   document.getElementById('menuOptionTown').textContent = me.zone === 'town' ? '🚪 Stadt verlassen' : '🏘️ Zur Stadt';
   {
     const rb = document.getElementById('raidBar'), er = (world.events || {}).raid;

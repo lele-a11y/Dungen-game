@@ -1418,7 +1418,8 @@ const ACHIEVEMENTS = [
   { id: 'c250', name: 'Kistenkönig', desc: '250 Truhen öffnen', stat: 'chests', thr: 250, gold: 5000 },
   { id: 'g200k', name: 'Millionär', desc: '200000 Gold verdienen', stat: 'goldEarned', thr: 200000, gold: 8000 },
   { id: 's5', name: 'Geheimnisjäger', desc: '5 Geheimräume entdecken', stat: 'secrets', thr: 5, gold: 1500 },
-  { id: 'v6', name: 'Bankknacker', desc: '6 Tresore öffnen', stat: 'vaults', thr: 6, gold: 1200 }
+  { id: 'v6', name: 'Bankknacker', desc: '6 Tresore öffnen', stat: 'vaults', thr: 6, gold: 1200 },
+  { id: 'd50', name: 'Organisiert', desc: '50 Dinge im Depot einlagern', stat: 'deposits', thr: 50, gold: 400 }
 ];
 const ACH_IDS = new Set(ACHIEVEMENTS.map(a => a.id));
 const COSMETICS = {
@@ -1532,7 +1533,7 @@ function profileFromAccount(a) {
     const it = sanitizeItem(a.equipment && a.equipment[slot]);
     equipment[slot] = it && it.slot === slot ? it : null;
   }
-  const stats = { kills: 0, bossKills: 0, pvpKills: 0, chests: 0, goldEarned: 0, questsDone: 0, vaults: 0, secrets: 0, raidKills: 0 };
+  const stats = { kills: 0, bossKills: 0, pvpKills: 0, chests: 0, goldEarned: 0, questsDone: 0, vaults: 0, secrets: 0, raidKills: 0, deposits: 0 };
   for (const k in stats) stats[k] = Math.max(0, Number(a.stats && a.stats[k]) || 0);
   const owned = { color: [], hat: [] };
   for (const kind of ['color', 'hat']) {
@@ -2537,6 +2538,7 @@ io.on('connection', (socket) => {
       let moved = 0;
       while (from.length && to.length < cap) { to.push(from.shift()); moved++; }
       if (!moved) return notice(p, dir === 'in' ? 'Depot ist voll.' : 'Inventar ist voll.');
+      if (dir === 'in') { p.stats.deposits = (p.stats.deposits || 0) + moved; checkAchievements(p); }
       sendProfile(p); saveAccountProgress(p);
       notice(p, `📦 ${moved} Gegenstand${moved === 1 ? '' : 'e'} ${dir === 'in' ? 'eingelagert' : 'entnommen'}.`);
       return;
@@ -2549,6 +2551,7 @@ io.on('connection', (socket) => {
     if (idx < 0) return;
     if (to.length >= cap) return notice(p, dir === 'in' ? 'Depot ist voll.' : 'Inventar ist voll.');
     to.push(from.splice(idx, 1)[0]);
+    if (dir === 'in') { p.stats.deposits = (p.stats.deposits || 0) + 1; checkAchievements(p); }
     sendProfile(p); saveAccountProgress(p);
   });
 
@@ -2566,7 +2569,7 @@ io.on('connection', (socket) => {
     } else {
       const moved = Math.min(amount, dir === 'in' ? (p[mat] || 0) : p.storage[mat]);
       if (moved <= 0) return;
-      if (dir === 'in') { p[mat] -= moved; p.storage[mat] += moved; }
+      if (dir === 'in') { p[mat] -= moved; p.storage[mat] += moved; p.stats.deposits = (p.stats.deposits || 0) + 1; checkAchievements(p); }
       else { p.storage[mat] -= moved; p[mat] = (p[mat] || 0) + moved; }
     }
     sendProfile(p); saveAccountProgress(p);
@@ -3507,7 +3510,7 @@ function leanOf(p) {
 function fullOf(p) {
   return Object.assign(leanOf(p), {
     xp: p.xp, xpNext: p.xpNext, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions,
-    speedBoostUntil: p.speedBoostUntil, abilityReadyAt: p.abilityReadyAt || 0, essence: p.essence,
+    speedBoostUntil: p.speedBoostUntil, abilityReadyAt: p.abilityReadyAt || 0, essence: p.essence, critUntil: p.critUntil || 0,
     upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed,
     keys: p.keys || 0, ability2ReadyAt: p.ability2ReadyAt || 0, guardUntil: p.guardUntil || 0, seasonPts: p.season ? p.season.points : 0,
     bossBest: p.bossBest || {}
