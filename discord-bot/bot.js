@@ -61,6 +61,13 @@ const STRUCTURE = [
   }
 ];
 
+// Private Team-Channels (nur fuer Admins/Owner sichtbar)
+const TEAM_CATEGORY = '🔒 Team';
+const TEAM_CHANNELS = [
+  { name: 'admin-chat', topic: 'Interner Admin-Chat', roles: ['🛡 Admin', '👑 Owner'] },
+  { name: 'owner-only', topic: 'Nur fuer den Owner', roles: ['👑 Owner'] }
+];
+
 // AutoMod-Regeln fuer !setup (name => Config)
 const AUTOMOD_RULES = [
   {
@@ -158,6 +165,20 @@ async function setupServer(guild) {
   if (supporterRole) {
     // Supporter-Rolle soll sichtbar sein (hoistet sie ueber normale Rollen)
     try { await supporterRole.setHoist(true); } catch (e) {}
+  }
+
+  // Private Team-Category mit Admin-/Owner-Channels
+  let teamCat = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === TEAM_CATEGORY);
+  if (!teamCat) teamCat = await guild.channels.create({ name: TEAM_CATEGORY, type: ChannelType.GuildCategory });
+  for (const ch of TEAM_CHANNELS) {
+    if (guild.channels.cache.find(c => c.parentId === teamCat.id && c.name === ch.name)) continue;
+    const allowPerms = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages];
+    const overwrites = [{ id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] }];
+    for (const roleName of ch.roles) {
+      const role = guild.roles.cache.find(r => r.name === roleName);
+      if (role) overwrites.push({ id: role.id, allow: allowPerms });
+    }
+    await guild.channels.create({ name: ch.name, type: ChannelType.GuildText, parent: teamCat.id, topic: ch.topic, permissionOverwrites: overwrites });
   }
 
   // #mod-log Channel (nur Admins/Mods sehen ihn)
