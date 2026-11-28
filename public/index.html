@@ -1875,6 +1875,7 @@ function startGame() {
 const keys = {};
 let aim = { x: 1, y: 0 };
 let joyVec = { x: 0, y: 0 };
+let lastMouseAimAt = 0;
 function bindInput() {
   window.addEventListener('keydown', (e) => {
     if (document.activeElement === chatInput) return;
@@ -1906,6 +1907,7 @@ function bindInput() {
     const cx = canvas.width / 2, cy = canvas.height / 2;
     aim.x = (e.clientX - rect.left) - cx;
     aim.y = (e.clientY - rect.top) - cy;
+    lastMouseAimAt = Date.now();
     sendInput();
   });
   canvas.addEventListener('mousedown', () => socket.emit('attack'));
@@ -2047,6 +2049,12 @@ function openNpc(panel) {
 
 function sendInput() {
   if (!socket) return;
+  // Tastatur-Modus (z.B. iPad): ohne Maus-Aiming folgt das Fadenkreuz der Bewegungsrichtung
+  if (!document.body.classList.contains('touch-active') && Date.now() - lastMouseAimAt > 3000) {
+    const mx = ((keys['d'] || keys['arrowright']) ? 1 : 0) - ((keys['a'] || keys['arrowleft']) ? 1 : 0);
+    const my = ((keys['s'] || keys['arrowdown']) ? 1 : 0) - ((keys['w'] || keys['arrowup']) ? 1 : 0);
+    if (mx || my) { const l = Math.hypot(mx, my) || 1; aim.x = mx / l * 100; aim.y = my / l * 100; }
+  }
   const jThresh = 0.3;
   socket.emit('input', {
     up: !!keys['w'] || !!keys['arrowup'] || (joyVec.y < -jThresh),

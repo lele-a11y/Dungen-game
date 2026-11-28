@@ -3234,6 +3234,8 @@ io.on('connection', (socket) => {
       return notice(p, `Dein Name ist jetzt ${nn}.`);
     }
     if (text === '/roll') { io.emit('chat', { name: p.name, text: 'würfelt ' + (1 + Math.floor(Math.random() * 100)) + '!' }); return; }
+    if (text === '/me') { return notice(p, 'Nutze /me <Aktion>, z.B. /me lacht.'); }
+    if (text.startsWith('/me ')) { const act = text.slice(4).trim().slice(0, 60); if (act) io.emit('chat', { name: p.name, text: '*' + act + '*' }); return; }
     if (text === '/flip') { io.emit('chat', { name: p.name, text: 'wirft eine Münze: ' + (Math.random() < 0.5 ? 'Kopf!' : 'Zahl!') }); return; }
     io.emit('chat', { name: p.name, text });
   });
