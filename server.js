@@ -1479,11 +1479,14 @@ const COSMETICS = {
     wizard2: { name: 'Runehut', icon: '🔮', price: 500 }
   }
 };
-const PET_COST = 400;
+const PETS = {
+  wolf: { name: 'Wolf', icon: '🐺', cost: 400, cd: 1100 },
+  cat:  { name: 'Katze', icon: '🐱', cost: 900, cd: 800 }
+};
 const SKILL_RESET_COST = 200;
 const CLIENT_DEFS = {
   rarities: RARITIES, skills: SKILL_DEFS, achievements: ACHIEVEMENTS, cosmetics: COSMETICS, recipes: RECIPES,
-  inventoryMax: INVENTORY_MAX, upgradeMax: UPGRADE_MAX, petCost: PET_COST, resetCost: SKILL_RESET_COST
+  inventoryMax: INVENTORY_MAX, upgradeMax: UPGRADE_MAX, pets: PETS, resetCost: SKILL_RESET_COST
 };
 
 function newItemId() { return 'g' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36); }
@@ -1575,7 +1578,7 @@ function profileFromAccount(a) {
     inventory: (Array.isArray(a.inventory) ? a.inventory : []).map(sanitizeItem).filter(Boolean).slice(0, INVENTORY_MAX),
     equipment, skills, stats, cosmetics: eqc,
     essence: Math.max(0, Number(a.essence) || 0),
-    pet: a.pet === 'wolf' ? 'wolf' : null,
+    pet: PETS[a.pet] ? a.pet : null,
     achievements: Array.isArray(a.achievements) ? a.achievements.filter(id => ACH_IDS.has(id)) : [],
     guild: typeof a.guild === 'string' ? a.guild.slice(0, 40) : null,
     friends: (Array.isArray(a.friends) ? a.friends : []).filter(x => typeof x === 'string' && x.length >= 3 && x.length <= 20).slice(0, 50),
@@ -1673,7 +1676,8 @@ function updatePet(p) {
     tryMove(mapFor(p.zone), p.petPos, Math.cos(a) * 3.4, Math.sin(a) * 3.4, 8);
   }
   const now = Date.now();
-  if (p.dead || now - (p.petAttackAt || 0) < 1100) return;
+  const petCd = (PETS[p.pet] && PETS[p.pet].cd) || 1100;
+  if (p.dead || now - (p.petAttackAt || 0) < petCd) return;
   if (!isDungeonTier(p.zone) && p.zone !== 'bossroom' && p.zone !== 'raid') return;
   for (const id in monsters) {
     const m = monsters[id];
@@ -2686,14 +2690,16 @@ io.on('connection', (socket) => {
     sendProfile(p); saveAccountProgress(p);
   });
 
-  socket.on('buyPet', () => {
+  socket.on('buyPet', (data) => {
     const p = players[socket.id];
     if (!p || p.pet) return;
-    if (p.gold < PET_COST) return notice(p, `Du brauchst ${PET_COST} Gold.`);
-    p.gold -= PET_COST;
-    p.pet = 'wolf';
+    const key = data && PETS[data.pet] ? data.pet : 'wolf';
+    const def = PETS[key];
+    if (p.gold < def.cost) return notice(p, `Du brauchst ${def.cost} Gold.`);
+    p.gold -= def.cost;
+    p.pet = key;
     sendProfile(p); saveAccountProgress(p);
-    notice(p, '🐺 Dein Wolf begleitet dich jetzt!');
+    notice(p, `${def.icon} Dein ${def.name} begleitet dich jetzt!`);
   });
 
   socket.on('leaderboard', async (d) => {
