@@ -16,6 +16,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.MessageContent // HINWEIS: im Developer Portal aktivieren!
   ]
 });
@@ -58,6 +59,13 @@ const STRUCTURE = [
       { name: 'vorschlaege', topic: 'Feature-Wuensche' }
     ]
   }
+];
+
+// Private Team-Channels (nur fuer Admins/Owner sichtbar)
+const TEAM_CATEGORY = '🔒 Team';
+const TEAM_CHANNELS = [
+  { name: 'admin-chat', topic: 'Interner Admin-Chat', roles: ['🛡 Admin', '👑 Owner'] },
+  { name: 'owner-only', topic: 'Nur fuer den Owner', roles: ['👑 Owner'] }
 ];
 
 // AutoMod-Regeln fuer !setup (name => Config)
@@ -159,6 +167,20 @@ async function setupServer(guild) {
     try { await supporterRole.setHoist(true); } catch (e) {}
   }
 
+  // Private Team-Category mit Admin-/Owner-Channels
+  let teamCat = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === TEAM_CATEGORY);
+  if (!teamCat) teamCat = await guild.channels.create({ name: TEAM_CATEGORY, type: ChannelType.GuildCategory });
+  for (const ch of TEAM_CHANNELS) {
+    if (guild.channels.cache.find(c => c.parentId === teamCat.id && c.name === ch.name)) continue;
+    const allowPerms = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages];
+    const overwrites = [{ id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] }];
+    for (const roleName of ch.roles) {
+      const role = guild.roles.cache.find(r => r.name === roleName);
+      if (role) overwrites.push({ id: role.id, allow: allowPerms });
+    }
+    await guild.channels.create({ name: ch.name, type: ChannelType.GuildText, parent: teamCat.id, topic: ch.topic, permissionOverwrites: overwrites });
+  }
+
   // #mod-log Channel (nur Admins/Mods sehen ihn)
   const supportCat = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '🛠 Support');
   const adminRole = guild.roles.cache.find(r => r.name === '🛡 Admin');
@@ -202,6 +224,37 @@ async function setupServer(guild) {
 
 client.once('ready', () => {
   console.log(`Bot eingeloggt als ${client.user.tag}`);
+});
+
+// ---------- Auto-Rolle + Logging ----------
+function findModLog(guild) {
+  return guild.channels.cache.find(c => c.name === 'mod-log');
+}
+
+client.on('guildMemberAdd', async (member) => {
+  const spieler = member.guild.roles.cache.find(r => r.name === '🧙 Spieler');
+  if (spieler) { try { await member.roles.add(spieler); } catch (e) { console.error('Autorole fehlgeschlagen:', e.message); } }
+  const log = findModLog(member.guild);
+  if (log) log.send(`📥 **${member.user.tag}** ist beigetreten (${member.guild.memberCount} Member)`).catch(() => {});
+});
+
+client.on('guildMemberRemove', (member) => {
+  const log = findModLog(member.guild);
+  if (log) log.send(`📤 **${member.user.tag}** hat den Server verlassen`).catch(() => {});
+});
+
+client.on('messageDelete', (msg) => {
+  if (msg.author && !msg.author.bot) {
+    const log = findModLog(msg.guild);
+    if (log) log.send(`🗑️ **${msg.author.tag}** löschte in <#${msg.channel.id}>: \`\`\`${(msg.content || '').slice(0, 200)}\`\`\``).catch(() => {});
+  }
+});
+
+client.on('messageUpdate', (oldMsg, newMsg) => {
+  if (oldMsg.author && !oldMsg.author.bot && oldMsg.content !== newMsg.content) {
+    const log = findModLog(oldMsg.guild);
+    if (log) log.send(`✏️ **${oldMsg.author.tag}** bearbeitete in <#${oldMsg.channel.id}>:\nvorher: \`${(oldMsg.content || '').slice(0, 150)}\`\nnachher: \`${(newMsg.content || '').slice(0, 150)}\``).catch(() => {});
+  }
 });
 
 client.on('messageCreate', async (msg) => {
@@ -260,3 +313,8 @@ client.on('messageCreate', async (msg) => {
 });
 
 client.login(TOKEN);
+
+// Keep-Alive HTTP-Server (noetig fuer Render-Hosting: gratis Tarife schlafen nach 15 Min. ohne Requests ein)
+const http = require('http');
+const keepAlive = http.createServer((req, res) => { res.writeHead(200); res.end('Dungeon Bot laeuft'); });
+keepAlive.listen(process.env.PORT || 3001, () => console.log('Keep-Alive auf Port', process.env.PORT || 3001));

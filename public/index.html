@@ -477,7 +477,7 @@
     <h2 style="margin:0 0 10px; color:var(--accent); font-size:18px; text-align:center;">🧭 Sonstiges</h2>
     <div style="font-size:13px; line-height:1.7;">
       <p style="margin:6px 0;"><b>Leo's Dungeon RPG</b> · v1.0<br><span class="muted">Ein Echtzeit-Multiplayer-Dungeon-RPG.</span></p>
-      <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex /gg /hello · /stats für Statistiken · /roll /flip</p>
+      <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex /gg /hello · /stats für Statistiken · /roll /flip · /nick Name ändert deinen Namen</p>
       <p style="margin:6px 0;" id="miscTip" class="muted"></p>
       <div style="display:flex; gap:8px; margin-top:10px;">
         <button class="menuOption" id="miscDiscord" style="flex:1;">💬 Discord</button>
@@ -745,7 +745,7 @@ function renderShop() {
   document.getElementById('shopGold').textContent = me.gold;
   const box = document.getElementById('shopItems');
   box.innerHTML = '';
-  const countKeys = { potion: null, speedpotion: null, dmg: 'upgDmg', hp: 'upgHp', speed: 'upgSpeed' };
+  const countKeys = { potion: null, speedpotion: null, dmg: 'upgDmg', hp: 'upgHp', speed: 'upgSpeed', luck: 'upgLuck' };
   const cats = {};
   for (const key in SHOP_ITEMS) {
     const def = SHOP_ITEMS[key];
@@ -1540,12 +1540,21 @@ function renderPlayersPanel() {
   list.innerHTML = others.map(p => `
     <div class="playerRow">
       <span>${p.name} (Lv${p.level}) · ${zoneLabel(p.zone)}</span>
-      <button data-id="${p.id}">Anfrage senden</button>
+      <span>
+        <button data-id="${p.id}">Anfrage senden</button>
+        <button data-duel="${p.id}" title="Duell">⚔️</button>
+      </span>
     </div>
   `).join('');
   list.querySelectorAll('button[data-id]').forEach(btn => {
     btn.addEventListener('click', () => {
       socket.emit('teleportRequest', { targetId: btn.dataset.id });
+      togglePlayersPanel(false);
+    });
+  });
+  list.querySelectorAll('button[data-duel]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      socket.emit('duelRequest', { targetId: btn.dataset.duel });
       togglePlayersPanel(false);
     });
   });
@@ -1817,6 +1826,10 @@ function startGame() {
       document.getElementById('tpaBox').style.display = 'none';
       pendingTpaFromId = null;
     }, 30000);
+  });
+  socket.on('duelIncoming', (r) => {
+    const ok = confirm(`⚔️ ${r.fromName} fordert dich zum Duell in der Arena!\nAnnehmen?`);
+    socket.emit('duelRespond', { fromId: r.fromId, accept: ok });
   });
   socket.on('tpaSent', (r) => {
     addChat(`🧭 Anfrage an ${r.targetName} gesendet...`);

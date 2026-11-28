@@ -66,7 +66,7 @@ async function createAccount(username, passwordHash, cls) {
   const doc = {
     username, passwordHash, cls,
     level: 1, xp: 0, gold: 0, potions: 1, speedPotions: 0,
-    upgDmg: 0, upgHp: 0, upgSpeed: 0, quests: [],
+    upgDmg: 0, upgHp: 0, upgSpeed: 0, upgLuck: 0, quests: [],
     inventory: [], equipment: {}, skills: {}, essence: 0, cosmetics: {}, pet: null,
     stats: {}, achievements: [], daily: {}, friends: [], guild: null,
     keys: 0, prestige: 0, season: { id: '', points: 0 }, week: { id: '', points: 0 }, bossBest: {},
@@ -84,9 +84,9 @@ async function saveAccountProgress(p) {
       { username: p.username },
       { $set: {
         level: p.level, xp: p.xp, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions, cls: p.cls,
-        upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, quests: p.quests || [],
+        upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, upgLuck: p.upgLuck || 0, quests: p.quests || [],
         inventory: p.inventory || [], equipment: p.equipment || {}, skills: p.skills || {}, essence: p.essence || 0,
-        cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null,
+        cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null, displayName: p.name || p.username,
         keys: p.keys || 0, prestige: p.prestige || 0, season: p.season || { id: '', points: 0 },
         week: p.week || { id: '', points: 0 }, bossBest: p.bossBest || {},
         storage: p.storage || { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 },
@@ -523,8 +523,10 @@ const SHOP_ITEMS = {
   speedpotion: { label: '⚡ Tempo-Trank (15s +60% Tempo)', cat: 'verbrauch', baseCost: 15, scale: 0, maxCount: null },
   dmg: { label: '⚔️ Waffe schärfen (+2 Schaden)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
   hp: { label: '🛡️ Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
-  speed: { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
+  speed: { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 },
+  luck: { label: '🍀 Glücksstein (+seltenere Beute)', cat: 'upgrades', baseCost: 40, scale: 30, maxCount: 8 }
 };
+const UPG_KEYS = { dmg: 'upgDmg', hp: 'upgHp', speed: 'upgSpeed', luck: 'upgLuck' };
 // Trinkgeld-Link: hier die eigene Ko-fi-URL eintragen (z.B. 'https://ko-fi.com/name').
 // Solange leer, wird die Trinkgeld-Sektion im Shop ausgeblendet.
 const DONATE_LINKS = { kofi: '' };
@@ -547,6 +549,7 @@ function shopCost(itemKey, currentCount) {
 const players = {};     // id -> player
 const monsters = {};    // id -> monster
 const tpaRequests = {}; // targetSocketId -> { fromId, expiresAt }
+const duelRequests = {}; // targetSocketId -> { fromId, expiresAt }
 const items = {};       // id -> ground item
 const projectiles = {}; // id -> projectile
 
@@ -970,8 +973,8 @@ function onRaidBossKilled(m, killer) {
     c.stats.goldEarned += gold; c.stats.raidKills++; c.stats.bossKills++;
     giveKey(c, 2);
     if (rank === 1) giveItem(c, genItem(c.level, Math.random() < 0.6 ? 3 : 2));
-    else if (rank <= 3) giveItem(c, genItem(c.level, Math.max(2, rollRarity(2))));
-    else if (share >= 0.05) giveItem(c, genItem(c.level, Math.max(1, rollRarity(1.5))));
+    else if (rank <= 3) giveItem(c, genItem(c.level, Math.max(2, rollRarity(2 + luckOf(c)))));
+    else if (share >= 0.05) giveItem(c, genItem(c.level, Math.max(1, rollRarity(1.5 + luckOf(c)))));
     questProgress(c, 'kill', 1, 'boss');
     questProgress(c, 'gold', gold);
     addSeasonPoints(c, pts);
@@ -1034,7 +1037,21 @@ function applyPvpDamage(target, dmg, attacker) {
     io.to(target.id).emit('died', { by: target.deadBy });
     setTimeout(() => respawnPlayer(target), 2000);
     if (attacker && attacker !== target) { attacker.stats.pvpKills++; addSeasonPoints(attacker, 5); questProgress(attacker, 'pvp', 1); checkAchievements(attacker); }
+    if (target.duelWith) resolveDuel(target, attacker);
   }
+}
+
+function resolveDuel(loser, winner) {
+  const w = winner && winner.id === loser.duelWith ? winner : players[loser.duelWith];
+  loser.duelWith = null;
+  if (!w) return;
+  w.duelWith = null;
+  const bonus = 100 + loser.level * 15;
+  w.gold += bonus;
+  grantXp(w, 150 + loser.level * 20);
+  io.emit('announcement', `⚔️ ${w.name} hat ${loser.name} im Duell besiegt!`);
+  notice(w, `🏆 Duell gewonnen! +${bonus} Gold`);
+  notice(loser, '💀 Duell verloren.');
 }
 
 function respawnPlayer(p) {
@@ -1533,6 +1550,7 @@ function equipmentBonus(p) {
   return b;
 }
 function goldBonus(p) { return 1 + 0.06 * ((p.skills && p.skills.greed) || 0); }
+function luckOf(p) { return 0.35 * ((p && p.upgLuck) || 0); }
 function skillPointsFree(p) {
   let spent = 0;
   for (const k in SKILL_DEFS) spent += (p.skills && p.skills[k]) || 0;
@@ -1630,11 +1648,11 @@ function giveItem(p, item) {
 function dropGear(killer, m) {
   const lvl = killer.level;
   if (m.type === 'boss') {
-    for (let i = 0; i < 3; i++) giveItem(killer, genItem(lvl, Math.max(i === 0 ? 2 : 1, rollRarity(2))));
+    for (let i = 0; i < 3; i++) giveItem(killer, genItem(lvl, Math.max(i === 0 ? 2 : 1, rollRarity(2 + luckOf(killer)))));
   } else if (m.type === 'treasure') {
-    giveItem(killer, genItem(lvl, rollRarity(1)));
+    giveItem(killer, genItem(lvl, rollRarity(1 + luckOf(killer))));
   } else if (Math.random() < 0.05) {
-    giveItem(killer, genItem(lvl, rollRarity(0)));
+    giveItem(killer, genItem(lvl, rollRarity(0 + luckOf(killer))));
   }
 }
 function checkAchievements(p) {
@@ -2292,6 +2310,7 @@ io.on('connection', (socket) => {
         upgDmg: account.upgDmg || 0,
         upgHp: account.upgHp || 0,
         upgSpeed: account.upgSpeed || 0,
+        upgLuck: account.upgLuck || 0,
         isAdmin: ADMIN_USERNAMES.has(username),
         role: roleFor(username, account),
         abilityReadyAt: 0,
@@ -2508,6 +2527,33 @@ io.on('connection', (socket) => {
     const requester = players[req.fromId];
     const me = players[socket.id];
     if (requester) io.to(requester.id).emit('tpaResult', { accepted: false, otherName: me ? me.name : '' });
+  });
+
+  socket.on('duelRequest', (data) => {
+    const p = players[socket.id];
+    const target = players[data && data.targetId];
+    if (!p || !target || p.dead || target.dead || target.id === p.id) return;
+    if (p.zone === 'raid' || target.zone === 'raid' || p.zone === 'bossroom' || target.zone === 'bossroom') return notice(p, 'In diesem Bereich ist kein Duell möglich.');
+    duelRequests[target.id] = { fromId: p.id, expiresAt: Date.now() + 30000 };
+    io.to(target.id).emit('duelIncoming', { fromId: p.id, fromName: p.name });
+    notice(p, `⚔️ Duell-Anfrage an ${target.name} gesendet.`);
+  });
+
+  socket.on('duelRespond', (data) => {
+    const p = players[socket.id];
+    const req = duelRequests[socket.id];
+    if (!p || !req) return;
+    if (data && data.fromId && data.fromId !== req.fromId) return;
+    delete duelRequests[socket.id];
+    const challenger = players[req.fromId];
+    if (Date.now() > req.expiresAt || !challenger || challenger.dead || p.dead) return;
+    if (!(data && data.accept)) { notice(challenger, `⚔️ ${p.name} hat das Duell abgelehnt.`); return; }
+    p.duelWith = challenger.id; challenger.duelWith = p.id;
+    p.zone = 'arena'; challenger.zone = 'arena';
+    p.x = ARENA_SPAWN.x - 40; p.y = ARENA_SPAWN.y;
+    challenger.x = ARENA_SPAWN.x + 40; challenger.y = ARENA_SPAWN.y;
+    p.hp = p.maxHp; challenger.hp = challenger.maxHp;
+    io.emit('announcement', `⚔️ ${challenger.name} und ${p.name} kämpfen ein Duell in der Arena!`);
   });
 
   socket.on('ability', () => {
@@ -3070,16 +3116,16 @@ io.on('connection', (socket) => {
     questProgress(p, 'chest', 1);
     questProgress(p, 'gold', gold);
     if (chest.kind === 'vault') {
-      giveItem(p, genItem(p.level, Math.max(2, rollRarity(2))));
-      giveItem(p, genItem(p.level, rollRarity(1.5)));
+      giveItem(p, genItem(p.level, Math.max(2, rollRarity(2 + luckOf(p)))));
+      giveItem(p, genItem(p.level, rollRarity(1.5 + luckOf(p))));
       p.essence += 10 + Math.round(lootMult * 4);
       p.stats.vaults++; addSeasonPoints(p, 6);
     } else if (chest.kind === 'secret') {
-      if (Math.random() < 0.5) giveItem(p, genItem(p.level, Math.max(1, rollRarity(1.2))));
+      if (Math.random() < 0.5) giveItem(p, genItem(p.level, Math.max(1, rollRarity(1.2 + luckOf(p)))));
       if (Math.random() < 0.4) giveKey(p, 1);
       addSeasonPoints(p, 3);
     } else {
-      if (Math.random() < 0.25) giveItem(p, genItem(p.level, rollRarity(0.5)));
+      if (Math.random() < 0.25) giveItem(p, genItem(p.level, rollRarity(0.5 + luckOf(p))));
       if (Math.random() < 0.10) giveKey(p, 1);
     }
     checkAchievements(p);
@@ -3116,7 +3162,7 @@ io.on('connection', (socket) => {
       p.gold -= cost;
       p.speedPotions += 1;
     } else {
-      const countKey = type === 'dmg' ? 'upgDmg' : (type === 'hp' ? 'upgHp' : 'upgSpeed');
+      const countKey = UPG_KEYS[type];
       const current = p[countKey];
       if (def.maxCount !== null && current >= def.maxCount) {
         return socket.emit('shopError', 'Maximum für dieses Upgrade erreicht.');
@@ -3180,6 +3226,13 @@ io.on('connection', (socket) => {
     if (!p || !msg) return;
     if (!chatAllowed(p)) return;
     const text = String(msg).slice(0, 80);
+    if (text.startsWith('/nick')) {
+      const nn = text.slice(5).trim().replace(/\s+/g, ' ');
+      if (nn.length < 3 || nn.length > 16) return notice(p, 'Name: 3 bis 16 Zeichen.');
+      p.name = nn;
+      saveAccountProgress(p);
+      return notice(p, `Dein Name ist jetzt ${nn}.`);
+    }
     if (text === '/roll') { io.emit('chat', { name: p.name, text: 'würfelt ' + (1 + Math.floor(Math.random() * 100)) + '!' }); return; }
     if (text === '/flip') { io.emit('chat', { name: p.name, text: 'wirft eine Münze: ' + (Math.random() < 0.5 ? 'Kopf!' : 'Zahl!') }); return; }
     io.emit('chat', { name: p.name, text });
@@ -3419,6 +3472,11 @@ io.on('connection', (socket) => {
     for (const targetId in tpaRequests) {
       if (tpaRequests[targetId].fromId === socket.id) delete tpaRequests[targetId];
     }
+    delete duelRequests[socket.id];
+    for (const targetId in duelRequests) {
+      if (duelRequests[targetId].fromId === socket.id) delete duelRequests[targetId];
+    }
+    if (p && p.duelWith) { const o = players[p.duelWith]; if (o) o.duelWith = null; }
   });
 });
 
@@ -3597,7 +3655,7 @@ function fullOf(p) {
   return Object.assign(leanOf(p), {
     xp: p.xp, xpNext: p.xpNext, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions,
     speedBoostUntil: p.speedBoostUntil, abilityReadyAt: p.abilityReadyAt || 0, essence: p.essence, critUntil: p.critUntil || 0,
-    upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed,
+    upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, upgLuck: p.upgLuck || 0,
     keys: p.keys || 0, ability2ReadyAt: p.ability2ReadyAt || 0, guardUntil: p.guardUntil || 0, seasonPts: p.season ? p.season.points : 0,
     bossBest: p.bossBest || {}
   });
