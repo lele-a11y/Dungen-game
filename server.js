@@ -402,7 +402,10 @@ const DUNGEON_TIER_DEFS = [
     theme: { wall: '#23232c', wallTop: '#121218', floorA: '#0c0c11', floorB: '#101017' } },
   { key: 'tier8', name: 'Aschenthron', minLevel: 80, gen: { type: 'rooms', gridW: 16, gridH: 4, cellSize: 15 }, monsterMult: 15, dmgMult: 6.5, lootMult: 6.5,
     pool: [['sensenmann', 3], ['obsidianKnight', 3], ['doomHerald', 3], ['voidStalker', 2], ['demon', 2]],
-    theme: { wall: '#2e1a1a', wallTop: '#180d0d', floorA: '#120a0a', floorB: '#170d0d' } }
+    theme: { wall: '#2e1a1a', wallTop: '#180d0d', floorA: '#120a0a', floorB: '#170d0d' } },
+  { key: 'tier9', name: 'Höllenschlund', minLevel: 95, gen: { type: 'maze', cols: 100, rows: 24 }, monsterMult: 19, dmgMult: 7.5, lootMult: 8,
+    pool: [['seelenfresser', 3], ['sensenmann', 3], ['doomHerald', 3], ['voidStalker', 2], ['obsidianKnight', 2]],
+    theme: { wall: '#1c0f2e', wallTop: '#0e0818', floorA: '#0d0716', floorB: '#140a20' } }
 ];
 const DUNGEON_TIERS = {};
 const FEATURES = {};   // zone -> { vaults, secrets, trapMap }
@@ -573,6 +576,7 @@ const MONSTER_TYPES = {
   obsidianKnight: { name: 'Obsidianritter', hp: 340, dmg: 46, speed: 1.0, xp: 170, range: 36, cooldown: 1100, color: '#3d3d52', radius: 17, effect: 'slow' },
   voidStalker:   { name: 'Nichtshetzer', hp: 150, dmg: 30, speed: 1.9, xp: 120, range: 30, cooldown: 800, color: '#5a2a7a', radius: 12, effect: 'poison' },
   doomHerald:    { name: 'Unheilbote', hp: 210, dmg: 38, speed: 0.9, xp: 155, range: 290, cooldown: 2100, color: '#8a1f1f', radius: 14, effect: 'burn', ranged: { speed: 5, life: 85, color: '#ff4d4d' } },
+  seelenfresser: { name: 'Seelenfresser', hp: 420, dmg: 64, speed: 1.5, xp: 260, range: 36, cooldown: 950, color: '#2a0f3d', radius: 16, effect: 'burn' },
   raidboss: { name: 'Weltenfresser', hp: 1, dmg: 38, speed: 1.1, xp: 0, range: 58, cooldown: 1000, color: '#7d3cff', radius: 44 },
   boss:   { name: 'Dungeon-Wächter', hp: 900, dmg: 22, speed: 1.0, xp: 400, range: 48, cooldown: 1100, color: '#c0392b', radius: 26 }
 };
@@ -1048,7 +1052,10 @@ function resolveDuel(loser, winner) {
   w.duelWith = null;
   const bonus = 100 + loser.level * 15;
   w.gold += bonus;
+  w.stats.duelWins = (w.stats.duelWins || 0) + 1;
   grantXp(w, 150 + loser.level * 20);
+  addSeasonPoints(w, 10);
+  checkAchievements(w);
   io.emit('announcement', `⚔️ ${w.name} hat ${loser.name} im Duell besiegt!`);
   notice(w, `🏆 Duell gewonnen! +${bonus} Gold`);
   notice(loser, '💀 Duell verloren.');
@@ -1259,7 +1266,7 @@ function useAbility(p) {
 }
 
 // ---------------- Quests ----------------
-const MONSTER_NAMES_PL = { goblin: 'Goblins', ork: 'Orks', slime: 'Schleime', bat: 'Fledermäuse', skeleton: 'Skelette', troll: 'Trolle', demon: 'Dämonen', archer: 'Bogenschützen', caster: 'Hexer', spitter: 'Säurespucker', obsidianKnight: 'Obsidianritter', voidStalker: 'Nichtshetzer', doomHerald: 'Unheilboten', sensenmann: 'Sensenmänner' };
+const MONSTER_NAMES_PL = { goblin: 'Goblins', ork: 'Orks', slime: 'Schleime', bat: 'Fledermäuse', skeleton: 'Skelette', troll: 'Trolle', demon: 'Dämonen', archer: 'Bogenschützen', caster: 'Hexer', spitter: 'Säurespucker', obsidianKnight: 'Obsidianritter', voidStalker: 'Nichtshetzer', doomHerald: 'Unheilboten', sensenmann: 'Sensenmänner', seelenfresser: 'Seelenfresser' };
 const QUEST_TYPES = ['kill', 'killType', 'chest', 'gold', 'boss', 'pvp'];
 const QUEST_COUNT = 3;
 
@@ -1441,6 +1448,8 @@ const ACHIEVEMENTS = [
   { id: 'p1', name: 'Gladiator I', desc: '1 Spieler in der Arena besiegen', stat: 'pvpKills', thr: 1, gold: 100 },
   { id: 'p10', name: 'Gladiator II', desc: '10 Spieler in der Arena besiegen', stat: 'pvpKills', thr: 10, gold: 800 },
   { id: 'p50', name: 'Gladiator III', desc: '50 Spieler in der Arena besiegen', stat: 'pvpKills', thr: 50, gold: 4000 },
+  { id: 'd1', name: 'Duellant', desc: '1 Duell gewinnen', stat: 'duelWins', thr: 1, gold: 150 },
+  { id: 'd10', name: 'Duellmeister', desc: '10 Duelle gewinnen', stat: 'duelWins', thr: 10, gold: 1200 },
   { id: 'c10', name: 'Schatzsucher I', desc: '10 Truhen öffnen', stat: 'chests', thr: 10, gold: 100 },
   { id: 'c100', name: 'Schatzsucher II', desc: '100 Truhen öffnen', stat: 'chests', thr: 100, gold: 1000 },
   { id: 'q10', name: 'Auftragsheld I', desc: '10 Quests erledigen', stat: 'questsDone', thr: 10, gold: 150 },
@@ -1580,7 +1589,7 @@ function profileFromAccount(a) {
     const it = sanitizeItem(a.equipment && a.equipment[slot]);
     equipment[slot] = it && it.slot === slot ? it : null;
   }
-  const stats = { kills: 0, bossKills: 0, pvpKills: 0, chests: 0, goldEarned: 0, questsDone: 0, vaults: 0, secrets: 0, raidKills: 0, deposits: 0 };
+  const stats = { kills: 0, bossKills: 0, pvpKills: 0, duelWins: 0, chests: 0, goldEarned: 0, questsDone: 0, vaults: 0, secrets: 0, raidKills: 0, deposits: 0 };
   for (const k in stats) stats[k] = Math.max(0, Number(a.stats && a.stats[k]) || 0);
   const owned = { color: [], hat: [] };
   for (const kind of ['color', 'hat']) {
@@ -1811,7 +1820,7 @@ setInterval(() => {
 
 // ---------------- Statuseffekte, Dungeon-Bosse, Zufallsereignisse ----------------
 const EFFECT_MS = { slow: 3000, poison: 5000, burn: 4000 };
-const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher', tier7: 'Obsidianfürst', tier8: 'Aschenfürst' };
+const TIER_BOSS_NAMES = { tier1: 'Moosriese', tier2: 'Minenwächter', tier3: 'Knochenfürst', tier4: 'Frostkoloss', tier5: 'Magmatitan', tier6: 'Abgrundherrscher', tier7: 'Obsidianfürst', tier8: 'Aschenfürst', tier9: 'Höllenfürst' };
 const TIER_BOSS_INTERVAL_MS = 8 * 60 * 1000;
 const tierBosses = {};
 const tierBossNextAt = {};
@@ -2011,6 +2020,7 @@ const BOSS_SPECIALS = {
   tier6: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
   tier7: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
   tier8: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
+  tier9: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal'],
   bossroom: ['summon', 'fan', 'enrage', 'volley'],
   raid: ['summon', 'fan', 'rockfall', 'enrage', 'volley', 'heal']
 };
@@ -2020,6 +2030,7 @@ const BOSS_FAN = {
   tier6: { effect: 'poison', color: '#8fff6b' },
   tier7: { effect: 'burn', color: '#ff5d8a' },
   tier8: { effect: 'burn', color: '#ffb03c' },
+  tier9: { effect: 'burn', color: '#c77dff' },
   raid: { effect: 'burn', color: '#c77dff' }
 };
 const BOSS_ADD_MAX = 8;

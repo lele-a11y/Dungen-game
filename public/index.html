@@ -1257,7 +1257,7 @@ function bigBody() {
   } else if (key === 'char:stats') {
     const s = profile.stats || {};
     const rows = [
-      ['⚔️ Monster besiegt', s.kills], ['👑 Bosse besiegt', s.bossKills], ['🥊 Spieler besiegt', s.pvpKills],
+      ['⚔️ Monster besiegt', s.kills], ['👑 Bosse besiegt', s.bossKills], ['🥊 Spieler besiegt', s.pvpKills], ['⚔️ Duelle gewonnen', s.duelWins],
       ['📦 Truhen geöffnet', s.chests], ['💰 Gold verdient', s.goldEarned], ['📜 Quests erledigt', s.questsDone],
       ['🔐 Tresore geöffnet', s.vaults], ['🕳️ Geheimräume', s.secrets], ['🐉 Raid-Bosse', s.raidKills], ['📦 Depot-Einlagerungen', s.deposits]
     ];
@@ -2441,6 +2441,13 @@ function drawMonster(m, sx, sy, s, t, meSx, meSy) {
       ctx.strokeStyle = '#ffb0a0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx + fx * r * 0.9, by + fy * r * 0.9); ctx.lineTo(sx + fx * r * 1.6, by + fy * r * 1.6); ctx.stroke();
       ctx.fillStyle = '#ffd0c0'; ctx.beginPath(); ctx.arc(sx + fx * r * 1.6, by + fy * r * 1.6, 3, 0, TAU); ctx.fill();
       eyes(r * 0.3, r * 0.35, 1.9, '#ffe0d0'); break;
+    case 'seelenfresser': {
+      glow(sx, by, r * 2.1, 'rgba(160,60,255,0.4)');
+      for (let i = 0; i < 8; i++) { const a = i / 8 * TAU + t / 350 + ph; ctx.fillStyle = 'rgba(200,120,255,0.65)'; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * r * 1.05 - fx * 4, by + Math.sin(a) * r * 1.05 - fy * 4, 2, 0, TAU); ctx.fill(); }
+      body(r, '#3d1a5e', '#150826');
+      ctx.fillStyle = '#b46bff'; ctx.beginPath(); ctx.arc(sx + fx * r * 0.6, by + fy * r * 0.6, 4.5, 0, TAU); ctx.fill();
+      eyes(r * 0.32, r * 0.42, 2.1, '#e0c0ff'); break;
+    }
     case 'treasure':
       glow(sx, by, 22, 'rgba(255,215,0,0.4)');
       body(r, '#fff0a0', '#c99a1c'); eyes(r * 0.4, r * 0.35, 2, '#fff');
