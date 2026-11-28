@@ -242,6 +242,10 @@
   #raidBarTxt { font-size:12px; color:#e6d4ff; text-shadow:0 1px 3px #000; margin-bottom:3px; }
   #raidBar .rbOuter { height:12px; background:#000a; border:1px solid #6b3fb0; border-radius:6px; overflow:hidden; }
   #raidBarFill { height:100%; width:100%; background:linear-gradient(90deg,#7d3cff,#c77dff); }
+  #bossHud { display:none; position:absolute; top:78px; left:50%; transform:translateX(-50%); z-index:12; width:min(380px,62vw); text-align:center; pointer-events:none; }
+  #bossHudTxt { font-size:13px; font-weight:bold; color:#ffb36b; text-shadow:0 1px 4px #000; margin-bottom:3px; }
+  #bossHud .bhOuter { height:14px; background:#000a; border:1px solid #c0392b; border-radius:7px; overflow:hidden; }
+  #bossHudFill { height:100%; width:100%; background:linear-gradient(90deg,#8e1f1f,#ff5a3c); transition:width .15s; }
   #tiersPanel {
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
     background: var(--panel); border:2px solid #2a2f3a; border-radius:14px;
@@ -466,14 +470,17 @@
     <button class="menuOption" id="menuOptionMagnet">🧲 Items-Magnet: aus</button>
     <button class="menuOption" id="menuOptionClose">▶️ Weiterspielen</button>
     <button class="menuOption" id="menuOptionLeave">🚪 Spiel verlassen</button>
+    <button class="menuOption" id="menuOptionLogout">👤 Abmelden</button>
   </div>
 
   <div id="miscPanel" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:40; background:#12161fee; border:1px solid var(--accent); border-radius:14px; padding:18px 22px; min-width:280px; max-width:92vw; color:#fff;">
     <h2 style="margin:0 0 10px; color:var(--accent); font-size:18px; text-align:center;">🧭 Sonstiges</h2>
     <div style="font-size:13px; line-height:1.7;">
       <p style="margin:6px 0;"><b>Leo's Dungeon RPG</b> · v1.0<br><span class="muted">Ein Echtzeit-Multiplayer-Dungeon-RPG.</span></p>
-      <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex /gg /hello · /stats für Statistiken</p>
+      <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex /gg /hello · /stats für Statistiken · /roll /flip</p>
+      <p style="margin:6px 0;" id="miscTip" class="muted"></p>
       <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="menuOption" id="miscDiscord" style="flex:1;">💬 Discord</button>
         <button class="menuOption" id="miscKofi" style="flex:1;">☕ Trinkgeld</button>
         <button class="menuOption" id="miscClose" style="flex:1;">Schließen</button>
       </div>
@@ -524,6 +531,8 @@
       <div id="adminPlayers"></div>
       <input type="text" id="adminUnbanName" placeholder="Benutzername entsperren">
       <button class="adminSingleBtn" id="adminUnbanBtn" style="margin-bottom:0;">Entsperren</button>
+      <input type="text" id="adminSupName" placeholder="Supporter: Benutzername" style="margin-top:8px;">
+      <button class="adminSingleBtn" id="adminSupBtn" style="margin-bottom:0;">☕ Supporter verleihen</button>
     </div>
 
     <button id="adminClose">Schliessen</button>
@@ -637,6 +646,7 @@
   </div>
 
   <div id="raidBar"><div id="raidBarTxt"></div><div class="rbOuter"><div id="raidBarFill"></div></div></div>
+  <div id="bossHud"><div id="bossHudTxt"></div><div class="bhOuter"><div id="bossHudFill"></div></div></div>
   <div id="hitFlash"></div>
   <div id="deathOverlay"><div>💀 Du bist gefallen...</div><div style="font-size:13px; margin-top:8px; color:#eee;">Respawn in Kürze</div></div>
 
@@ -667,9 +677,15 @@
         <div class="classBtn" data-cls="paladin">
           <span class="icon">✝️</span>Paladin<small>Viel HP, heilt sich</small>
         </div>
+        <div class="classBtn" data-cls="berserker">
+          <span class="icon">🪓</span>Berserker<small>Glaskanone, Blutrausch</small>
+        </div>
       </div>
       <div id="authMsg" style="color:#ff8080; font-size:12px; min-height:16px; margin-bottom:8px; text-align:center;"></div>
       <button id="playBtn">Einloggen &amp; Ins Dungeon!</button>
+      <div id="discordLinkWrap" style="display:none; margin-top:10px; text-align:center;">
+        <a id="discordLink" href="#" target="_blank" rel="noopener" style="color:#8ab4ff; font-size:13px;">💬 Discord beitreten</a>
+      </div>
     </div>
   </div>
 </div>
@@ -707,11 +723,15 @@ const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0
 if (isTouchDevice) document.body.classList.add('touch-active');
 
 let SHOP_ITEMS = {};
+let DEAL = null;
 const SHOP_CATS = { verbrauch: '🧪 Verbrauch', upgrades: '⚔️ Upgrades', echtgeld: '💰 Echtgeld (Trinkgeld)' };
 let DONATE = { kofi: '' };
+let DISCORD_INVITE = '';
 function shopCostClient(key, count) {
   const d = SHOP_ITEMS[key];
-  return d.baseCost + d.scale * count;
+  let c = d.baseCost + d.scale * count;
+  if (key === DEAL) c = Math.round(c * 0.7);
+  return c;
 }
 let shopOpen = false;
 function toggleShop(force) {
@@ -732,6 +752,13 @@ function renderShop() {
     const cat = def.cat || 'verbrauch';
     (cats[cat] = cats[cat] || []).push(key);
   }
+  if (DEAL && SHOP_ITEMS[DEAL]) {
+    const banner = document.createElement('div');
+    banner.className = 'shopCat';
+    banner.style.color = '#8ee08e';
+    banner.textContent = `🏷️ Tagesangebot: ${SHOP_ITEMS[DEAL].label} (-30%)`;
+    box.appendChild(banner);
+  }
   const addHeader = (txt) => {
     const h = document.createElement('div');
     h.className = 'shopCat';
@@ -748,7 +775,7 @@ function renderShop() {
       const cost = shopCostClient(key, count);
       const row = document.createElement('div');
       row.className = 'shopItem';
-      row.innerHTML = `<div class="info">${def.label}${countKeys[key] ? `<div class="cnt">Stufe ${count}${def.maxCount ? '/' + def.maxCount : ''}</div>` : ''}</div>
+      row.innerHTML = `<div class="info">${key === DEAL ? '🏷️ ' : ''}${def.label}${countKeys[key] ? `<div class="cnt">Stufe ${count}${def.maxCount ? '/' + def.maxCount : ''}</div>` : ''}</div>
         <button ${maxedOut ? 'disabled' : ''} data-key="${key}">${maxedOut ? 'Max' : cost + '🪙'}</button>`;
       box.appendChild(row);
     }
@@ -893,6 +920,13 @@ document.getElementById('menuOptionPlayers').addEventListener('click', () => { t
 document.getElementById('menuOptionAdmin').addEventListener('click', () => { toggleMenu(false); toggleAdminPanel(true); });
 document.getElementById('menuOptionTown').addEventListener('click', () => { toggleMenu(false); const m = world.players.find(q => q.id === myId); socket.emit(m && m.zone === 'town' ? 'leaveTown' : 'joinTown'); });
 document.getElementById('menuOptionRaid').addEventListener('click', () => { toggleMenu(false); openBig('raid', 'raid'); });
+document.getElementById('menuOptionLogout').addEventListener('click', () => {
+  if (confirm('Wirklich abmelden? Beim nächsten Besuch musst du dich neu einloggen.')) {
+    clearSession();
+    if (socket) socket.emit('logout');
+    setTimeout(() => location.reload(), 300);
+  }
+});
 document.getElementById('menuOptionLeave').addEventListener('click', () => {
   if (confirm('Spiel wirklich verlassen?')) {
     if (socket) socket.disconnect();
@@ -1185,8 +1219,15 @@ function bigBody() {
       h += '</div>';
     }
     h += '<h3>Begleiter</h3>';
-    h += profile.pet ? '<div class="itemRow"><div>🐺 <b>Wolf</b><div class="meta">folgt dir und greift Gegner in der Nähe an</div></div></div>'
-      : `<div class="itemRow"><div>🐺 <b>Wolf</b><div class="meta">folgt dir und greift Gegner in der Nähe an</div></div><div class="acts"><button data-act="buyPet" data-arg="">Kaufen · ${DEFS.petCost}🪙</button></div></div>`;
+    const petDefs = DEFS.pets || { wolf: { name: 'Wolf', icon: '🐺', cost: DEFS.petCost || 400 } };
+    if (profile.pet) {
+      const pd = petDefs[profile.pet] || petDefs.wolf;
+      h += `<div class="itemRow"><div>${pd.icon} <b>${pd.name}</b><div class="meta">folgt dir und greift Gegner in der Nähe an</div></div></div>`;
+    } else {
+      for (const [pk, pd] of Object.entries(petDefs)) {
+        h += `<div class="itemRow"><div>${pd.icon} <b>${pd.name}</b><div class="meta">folgt dir und greift Gegner in der Nähe an</div></div><div class="acts"><button data-act="buyPet" data-arg="${pk}">Kaufen · ${pd.cost}🪙</button></div></div>`;
+      }
+    }
   } else if (key === 'char:stats') {
     const s = profile.stats || {};
     const rows = [
@@ -1333,7 +1374,7 @@ const BIG_ACTIONS = {
   skillReset: () => socket.emit('skillReset'),
   buyCos: (a) => { const [kind, id] = a.split(':'); socket.emit('buyCosmetic', { kind, id }); },
   setCos: (a) => { const [kind, id] = a.split(':'); socket.emit('setCosmetic', { kind, id: id || null }); },
-  buyPet: () => socket.emit('buyPet'),
+  buyPet: (a) => socket.emit('buyPet', { pet: a }),
   prestige: () => { if (confirm('Wirklich wiedergeboren werden? Level und Fertigkeiten starten bei 1. Ausrüstung, Gold, Aussehen und Gilde bleiben.')) socket.emit('prestige'); },
   changeClass: (a) => { if (confirm('Klasse wechseln? Das kostet ' + META.classChangeCost + ' Gold.')) socket.emit('changeClass', { cls: a }); },
   joinRaid: () => socket.emit('joinRaid'),
@@ -1416,7 +1457,7 @@ function renderTiersPanel() {
   const list = document.getElementById('tiersList');
   list.innerHTML = Object.keys(DUNGEON_TIERS).map(key => {
     const t = DUNGEON_TIERS[key];
-    const locked = me.level < t.minLevel;
+    const locked = me.level < t.minLevel && me.role !== 'owner';
     const current = me.zone === key;
     const rec = me.bossBest && me.bossBest[key];
     const recTxt = rec ? ` · ⏱️ ${Math.floor(rec / 60)}:${String(rec % 60).padStart(2, '0')}` : '';
@@ -1548,6 +1589,10 @@ document.getElementById('adminUnbanBtn').addEventListener('click', () => {
   const el = document.getElementById('adminUnbanName');
   if (el.value.trim()) { socket.emit('adminUnban', { username: el.value.trim() }); el.value = ''; }
 });
+document.getElementById('adminSupBtn').addEventListener('click', () => {
+  const el = document.getElementById('adminSupName');
+  if (el.value.trim()) { socket.emit('adminSupporter', { username: el.value.trim(), on: true }); el.value = ''; }
+});
 setInterval(() => { if (adminOpen) renderAdminPlayers(); }, 2000);
 document.getElementById('adminGoldAll').addEventListener('click', () => {
   const amount = parseInt(document.getElementById('adminGoldAmount').value, 10) || 50;
@@ -1606,18 +1651,31 @@ document.querySelectorAll('.classBtn').forEach(btn => {
 });
 
 document.getElementById('playBtn').addEventListener('click', startGame);
+
+// Angemeldet bleiben: gespeicherte Sitzung automatisch nutzen
+try {
+  const saved = JSON.parse(localStorage.getItem('dungeonSession') || 'null');
+  if (saved && saved.u && saved.t) {
+    document.getElementById('userInput').value = saved.u;
+    window.__autoAuth = { username: saved.u, token: saved.t };
+    startGame();
+  }
+} catch (e) {}
 document.getElementById('passInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') startGame(); });
 
 let authSocket = null;
+function clearSession() { try { localStorage.removeItem('dungeonSession'); } catch (e) {} }
 function startGame() {
   const username = document.getElementById('userInput').value.trim();
-  const password = document.getElementById('passInput').value;
+  const auto = window.__autoAuth;
+  const useToken = !!(auto && auto.username === username && auto.token);
+  const password = useToken ? '' : document.getElementById('passInput').value;
   const name = document.getElementById('nameInput').value.trim() || username;
   const msgBox = document.getElementById('authMsg');
-  msgBox.textContent = '';
+  msgBox.textContent = useToken ? 'Sitzung wird wiederhergestellt...' : '';
 
   if (!username || username.length < 3) { msgBox.textContent = 'Benutzername braucht mind. 3 Zeichen.'; return; }
-  if (!password || password.length < 4) { msgBox.textContent = 'Passwort braucht mind. 4 Zeichen.'; return; }
+  if (!useToken && (!password || password.length < 4)) { msgBox.textContent = 'Passwort braucht mind. 4 Zeichen.'; return; }
 
   document.getElementById('playBtn').disabled = true;
 
@@ -1625,12 +1683,15 @@ function startGame() {
   socket.on('authError', (msg) => {
     msgBox.textContent = msg;
     document.getElementById('playBtn').disabled = false;
+    if (useToken) { clearSession(); window.__autoAuth = null; }
   });
   socket.on('init', (data) => {
     myId = data.you; DUNGEON_TIERS = data.dungeonTiers || {}; MONSTER_DEFS = data.monsterDefs || {}; ABILITIES = data.abilities || {}; DEFS = data.defs || {}; ARENA_MAP = data.arenaMap; BOSSROOM_MAP = data.bossRoomMap; TILE = data.tile; CLASSES = data.classes;
-    TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {}; SHOP_ITEMS = data.shop || {};
+    TOWN = data.town || null; RAID_MAP = data.raidMap || []; ABILITIES2 = data.abilities2 || {}; META = data.meta || {}; SHOP_ITEMS = data.shop || {}; DEAL = data.deal || null;
+    if (data.session && username) { try { localStorage.setItem('dungeonSession', JSON.stringify({ u: username, t: data.session })); } catch (e) {} }
     isAdmin = !!data.isAdmin;
     if (data.donate) DONATE = data.donate;
+    if (data.discord) { DISCORD_INVITE = data.discord; const w = document.getElementById('discordLinkWrap'); if (w && DISCORD_INVITE) { document.getElementById('discordLink').href = DISCORD_INVITE; w.style.display = 'block'; } }
     if (magnetOn) socket.emit('setMagnet', true);
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'flex';
@@ -1662,7 +1723,7 @@ function startGame() {
       if (lastOwnGold !== null && meNew.gold > lastOwnGold && meNew.gold - lastOwnGold < 2000) sfx('coin', 90);
       lastOwnGold = meNew.gold;
     }
-    if (meNew) { currentZone = meNew.zone || currentZone; updateZoneUi(meNew); syncEffects(s, meNew); updateHud(meNew); }
+    if (meNew) { currentZone = meNew.zone || currentZone; updateZoneUi(meNew); syncEffects(s, meNew); updateHud(meNew); updateBossHud(s, meNew); }
     if (shopOpen) renderShop();
     if (pvpOpen) renderPvpPanel();
   });
@@ -1711,7 +1772,7 @@ function startGame() {
   socket.on('guildInvited', (r) => showPrompt('guild', '🏰 ' + r.fromName + ' lädt dich in die Gilde „' + r.guildName + '“ [' + r.tag + '] ein', () => socket.emit('guildAccept'), () => socket.emit('guildDecline'), 45000));
   socket.on('partyInvited', (r) => showPrompt('party', '👥 ' + r.fromName + ' lädt dich in eine Gruppe ein', () => socket.emit('partyAccept'), () => socket.emit('partyDecline'), 30000));
   socket.on('tradeIncoming', (r) => showPrompt('trade', '🤝 ' + r.fromName + ' bietet „' + r.item.name + '“ (' + DEFS.rarities[r.item.rarity].name + ', ' + statsText(r.item.e) + (r.item.up ? ', +' + r.item.up : '') + ') für ' + r.price + ' Gold an', () => socket.emit('tradeAccept'), () => socket.emit('tradeDeny'), 45000));
-  socket.on('kicked', (msg) => { alert(msg); location.reload(); });
+  socket.on('kicked', (msg) => { clearSession(); alert(msg); location.reload(); });
   socket.on('leaderboard', (r) => { lastLb[r.cat] = r.rows; if (bigKind === 'rank') renderBig(); });
   socket.on('notice', (t) => pushToast(t));
   socket.on('season', (r) => { mySeason = r; if (bigKind === 'raid') renderBig(); });
@@ -1768,7 +1829,7 @@ function startGame() {
     }
   });
 
-  socket.emit('auth', { mode: authMode, username, password, name, cls: selectedClass });
+  socket.emit('auth', { mode: useToken ? 'login' : authMode, username, token: useToken ? auto.token : undefined, password, name: useToken ? '' : name, cls: selectedClass });
 }
 
 // ---------------- Eingabe ----------------
@@ -1969,6 +2030,8 @@ function addChat(text) {
 // ---------------- Rendering ----------------
 // ---------------- Grafik ----------------
 const TAU = Math.PI * 2;
+const ROLE_COLORS = { owner: '#ffd24d', admin: '#ff6b6b', mod: '#c678dd', supporter: '#4fc3f7' };
+const ROLE_LABELS = { owner: '👑 Owner', admin: '🛡 Admin', mod: '⭐ Mod', supporter: '☕ Supporter' };
 let gfxHigh = true;
 try { const gSaved = localStorage.getItem('dungeonGfx'); gfxHigh = gSaved ? gSaved !== 'low' : !isTouchDevice; } catch (err) { gfxHigh = !isTouchDevice; }
 function updateGfxBtn() { document.getElementById('menuOptionGfx').textContent = gfxHigh ? '🎨 Grafik: Hoch' : '🎨 Grafik: Niedrig (schneller)'; }
@@ -1988,14 +2051,32 @@ document.getElementById('menuOptionMagnet').addEventListener('click', () => {
   updateMagnetBtn();
 });
 updateMagnetBtn();
+const MISC_TIPS = [
+  'Tipp: Das Depot in der Stadt bewahrt Items & Ressourcen auch nach dem Logout.',
+  'Tipp: Die Tagesquest gibt 1,5x Belohnung – schau täglich vorbei!',
+  'Tipp: Im Shop wechselt das Tagesangebot jeden Tag um Mitternacht.',
+  'Tipp: Gildenmitglieder in der Nähe geben +5% XP – grindet zusammen!',
+  'Tipp: Der Gaukler Finn in der Stadt schenkt zufällige Buffs (5 Min. Cooldown).',
+  'Tipp: /stats im Chat zeigt deine Statistiken auf einen Blick.',
+  'Tipp: Neue Dungeon-Stufen schaltest du automatisch per Level frei.',
+  'Tipp: Die Minimap zeigt nur erkundetes Terrain – erkunde alles!',
+  'Tipp: Boss-Rekorde pro Dungeon findest du im „Dungeon wählen"-Panel.',
+  'Tipp: Mit /g schreibst du nur an deine Gruppe, mit /gc an die Gilde.'
+];
 function toggleMisc(force) {
   const el = document.getElementById('miscPanel');
   const open = (typeof force === 'boolean') ? force : el.style.display === 'none';
   el.style.display = open ? 'block' : 'none';
+  if (open) {
+    const day = Math.floor(Date.now() / 86400000);
+    document.getElementById('miscTip').textContent = '💡 ' + MISC_TIPS[day % MISC_TIPS.length];
+  }
+  document.getElementById('miscDiscord').disabled = !DISCORD_INVITE;
   document.getElementById('miscKofi').disabled = !DONATE.kofi;
 }
 document.getElementById('menuOptionSonstiges').addEventListener('click', () => { toggleMenu(false); toggleMisc(true); });
 document.getElementById('miscClose').addEventListener('click', () => toggleMisc(false));
+document.getElementById('miscDiscord').addEventListener('click', () => { if (DISCORD_INVITE) window.open(DISCORD_INVITE, '_blank', 'noopener'); });
 document.getElementById('miscKofi').addEventListener('click', () => { if (DONATE.kofi) window.open(DONATE.kofi, '_blank', 'noopener'); });
 const smooth = new Map();      // weiche Bewegung: Schluessel -> { x, y, fx, fy, mv, seen }
 const particles = [];
@@ -2117,6 +2198,11 @@ function drawHero(p, sx, sy, s, t) {
     ctx.beginPath(); ctx.moveTo(hx - fx * 3, hy - fy * 3); ctx.lineTo(hx, hy); ctx.stroke();
     ctx.fillStyle = '#d9b23c'; ctx.strokeStyle = '#5a4310'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(sx + ox * 11 + fx * 2, by + oy * 11 + fy * 2, 6, 0, TAU); ctx.fill(); ctx.stroke();
+  } else if (p.cls === 'berserker') {
+    const hx = sx - ox * 10 + fx * 3, hy = by - oy * 10 + fy * 3;
+    ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + fx * 17, hy + fy * 17); ctx.stroke();
+    ctx.fillStyle = '#cfd6e6'; ctx.beginPath(); ctx.moveTo(hx + fx * 17 + ox * 5, hy + fy * 17 + oy * 5); ctx.lineTo(hx + fx * 17 - fx * 4 + ox * 8, hy + fy * 17 - fy * 4 + oy * 8); ctx.lineTo(hx + fx * 17 - fx * 4 - ox * 8, hy + fy * 17 - fy * 4 - oy * 8); ctx.closePath(); ctx.fill();
   }
   const g = ctx.createRadialGradient(sx - 3, by - 4, 2, sx, by, 13);
   g.addColorStop(0, shade(color, 45)); g.addColorStop(1, shade(color, -35));
@@ -2131,6 +2217,9 @@ function drawHero(p, sx, sy, s, t) {
     ctx.fillStyle = '#1b1e26'; ctx.beginPath(); ctx.arc(ex + fx * 0.8, ey + fy * 0.8, 1.2, 0, TAU); ctx.fill();
   }
   if (p.hat) { ctx.font = '16px Verdana'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(p.hat, sx, by - 12); ctx.textBaseline = 'alphabetic'; }
+  if (p.role && ROLE_LABELS[p.role]) {
+    outlinedText(ROLE_LABELS[p.role], sx, by - (p.hat ? 38 : 27), ROLE_COLORS[p.role], 'bold 9px Verdana');
+  }
   outlinedText((p.prestige ? '★' + p.prestige + ' ' : '') + (p.tag ? '[' + p.tag + '] ' : '') + p.name + '  Lv' + p.level, sx, by - (p.hat ? 26 : 17), p.id === myId ? '#ffe9a8' : '#ffffff', 'bold 11px Verdana');
   hpBar(sx - 16, by + 15, 32, 4, p.hp / p.maxHp);
 }
@@ -2158,6 +2247,34 @@ function drawWolf(px, py, s, t) {
   for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(6, sd * 3); ctx.lineTo(8.5, sd * 7.5); ctx.lineTo(10.5, sd * 3.2); ctx.closePath(); ctx.fill(); }
   ctx.fillStyle = '#ffe9a8';
   for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(11, sd * 2, 0.9, 0, TAU); ctx.fill(); }
+  ctx.restore();
+}
+
+// ----- Katze -----
+function drawCat(px, py, s, t) {
+  const moving = s.mv > 0.25;
+  const ang = Math.atan2(s.fy, s.fx);
+  drawShadow(px, py + 6, 9, 3.2);
+  ctx.save();
+  ctx.translate(px, py); ctx.rotate(ang);
+  const swish = Math.sin(t / (moving ? 60 : 200)) * (moving ? 0.4 : 0.2);
+  ctx.strokeStyle = '#c98d4b'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-8, 0); ctx.quadraticCurveTo(-15, Math.sin(swish * 2) * 4, -18, Math.sin(swish * 2) * 7); ctx.stroke();
+  const step = moving ? Math.sin(t / 55) * 2 : 0;
+  ctx.fillStyle = '#b5773a';
+  for (const leg of [[5, -4, 1], [5, 4, -1], [-5, -4, -1], [-5, 4, 1]]) { ctx.beginPath(); ctx.arc(leg[0] + step * leg[2], leg[1], 1.8, 0, TAU); ctx.fill(); }
+  const g = ctx.createLinearGradient(0, -6, 0, 6);
+  g.addColorStop(0, '#e8a95c'); g.addColorStop(1, '#b5773a');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 0, 8.5, 5.5, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#e8a95c'; ctx.beginPath(); ctx.arc(8, 0, 4.2, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#f2c184'; ctx.beginPath(); ctx.ellipse(11.5, 0, 2.4, 1.8, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#20232a'; ctx.beginPath(); ctx.arc(13.5, 0, 1, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#b5773a';
+  for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(5, sd * 2.5); ctx.lineTo(6.5, sd * 6); ctx.lineTo(8, sd * 2.8); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle = '#3fae5a';
+  for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(9.5, sd * 1.6, 0.8, 0, TAU); ctx.fill(); }
+  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 0.8;
+  for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(-7, sd * 2); ctx.lineTo(-13, sd * 4.5); ctx.stroke(); }
   ctx.restore();
 }
 
@@ -2433,6 +2550,18 @@ function ensureVignette() {
   vc.fillStyle = g; vc.fillRect(0, 0, w, h);
   vignetteKey = key;
 }
+function updateBossHud(s, me) {
+  const el = document.getElementById('bossHud');
+  if (!el) return;
+  const boss = (s.monsters || []).find(m => (m.type === 'boss' || m.type === 'raidboss') && m.maxHp);
+  if (boss && me && !me.dead) {
+    el.style.display = 'block';
+    document.getElementById('bossHudTxt').textContent = '👑 ' + (boss.name || 'Boss') + (boss.enraged ? ' 😡' : '');
+    document.getElementById('bossHudFill').style.width = Math.max(0, Math.min(100, boss.hp / boss.maxHp * 100)) + '%';
+  } else {
+    el.style.display = 'none';
+  }
+}
 function updateZoneUi(me) {
   if (!me) return;
   const tierInfo = DUNGEON_TIERS[me.zone];
@@ -2606,7 +2735,7 @@ function render() {
       const ps = smoothPos('w' + p.id, p.px, p.py, k);
       if (ps.mv < 0.15) { const dx = s.x - ps.x, dy = s.y - ps.y, d = Math.hypot(dx, dy) || 1; ps.fx = dx / d; ps.fy = dy / d; }
       const psx = ps.x - camX, psy = ps.y - camY;
-      list.push({ y: psy, fn: () => drawWolf(psx, psy, ps, now) });
+      list.push({ y: psy, fn: () => (p.pet === 'cat' ? drawCat(psx, psy, ps, now) : drawWolf(psx, psy, ps, now)) });
     }
     list.push({ y: sy + 0.5, fn: () => drawHero(p, sx, sy, s, now) });
   }
@@ -2680,7 +2809,7 @@ function render() {
       ctx.fillStyle = '#ff6a3c'; ctx.beginPath(); ctx.arc(mx, my - fall, 7, 0, TAU); ctx.fill();
     } else {
       const rr = Math.max(1, f.r * t);
-      const pal = { nova: ['rgba(255,150,60,0.25)', '#ff9a3c'], guard: ['rgba(100,170,255,0.25)', '#6fb7ff'], blades: ['rgba(190,140,255,0.25)', '#c9a0ff'] }[f.type] || ['rgba(255,230,140,0.2)', '#ffe08a'];
+      const pal = { nova: ['rgba(255,150,60,0.25)', '#ff9a3c'], guard: ['rgba(100,170,255,0.25)', '#6fb7ff'], blades: ['rgba(190,140,255,0.25)', '#c9a0ff'], rage: ['rgba(255,50,40,0.3)', '#ff5040'] }[f.type] || ['rgba(255,230,140,0.2)', '#ffe08a'];
       glow(f.x - camX, f.y - camY, rr, pal[0]);
       ctx.strokeStyle = pal[1]; ctx.lineWidth = 5;
       ctx.beginPath(); ctx.arc(f.x - camX, f.y - camY, rr, 0, TAU); ctx.stroke();

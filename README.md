@@ -51,6 +51,7 @@ dann NICHT gespeichert.
    - Key: `MONGO_URI`
    - Value: der Connection-String aus Schritt 2 (MongoDB Atlas)
    - Optional, für Admin-Rechte: Key `ADMIN_USERNAMES`, Value z.B. `dein_benutzername` (mehrere Namen mit Komma trennen, z.B. `leo,max`). Wer sich mit einem dieser Benutzernamen einloggt, sieht im Spielmenü das 👑 Admin-Panel (Gold/Tränke verschenken, Server-Ansagen, Monsterwelle auslösen, alle heilen).
+   - Optional, Namens-Tags: `OWNER_USERNAMES` (👑 Owner, z.B. der Server-Besitzer) und `MOD_USERNAMES` (⭐ Moderator) — gleiche Schreibweise wie `ADMIN_USERNAMES`.supporter: true}` auf den Account in der MongoDB-Collection `accounts` setzen — der Tag erscheint beim nächsten Login. Ein Admin kann Supporter auch live im Admin-Panel verleihen.
 6. Deploy klicken. Nach ein paar Minuten bekommst du eine URL wie
    `https://leo-dungeon-rpg.onrender.com`
 
@@ -109,6 +110,7 @@ Die Minimap oben rechts zeigt nur den von dir erkundeten Bereich (Unerforschtes 
 | Magier | Feuernova | Ring aus 12 Geschossen | 10 s |
 | Schurke | Schattenschritt | Sprung in Zielrichtung, der nächste Nahkampfangriff ist ein sicherer Krit | 7 s |
 | Paladin | Heiliger Ruf | 25 % Heilung plus Heilschlag an allen Gegnern im Umkreis | 9 s |
+| Berserker | Blutrausch | Opfert 20 % LP für 6 s: +40 % Schaden | 14 s |
 
 Werte und Abklingzeiten stehen in `server.js` bei `ABILITIES` und in `useAbility`.
 
@@ -242,7 +244,7 @@ Händler (Shop), Schmied (Ausrüstung/Verbessern), Questgeberin, Herold (Raid & 
 - Geheimräume: eine Wand, die bei einem Angriff in der Nähe nachgibt (feine Risse, wenn man nah dran ist). Zwei Truhen drin, Schließung nach 5 Min.
 
 **Zweite Fähigkeit (Taste T, auf dem Handy eigener Button):**
-Krieger *Bollwerk* (5 s halber Schaden + 15 % Heilung), Magier *Meteor* (Einschlag nach 0,9 s), Schurke *Klingentanz* (3 Schläge rundherum), Paladin *Lichtwall* (4 s halber Schaden + 20 % Heilung).
+Krieger *Bollwerk* (5 s halber Schaden + 15 % Heilung), Magier *Meteor* (Einschlag nach 0,9 s), Schurke *Klingentanz* (3 Schläge rundherum), Paladin *Lichtwall* (4 s halber Schaden + 20 % Heilung), Berserker *Blutdurst* (6 s lang heilt jeder Treffer 20 % des Schadens + 10 % sofort).
 
 **Wiedergeburt** (Charakter → Aufstieg, ab Level 50, max. Stufe 10): Level startet bei 1, dauerhaft +6 % Leben/Schaden und +10 % XP je Stufe, dazu Gold, Essenz und eine legendäre Ausrüstung. Dort auch der **Klassenwechsel** (750 Gold).
 

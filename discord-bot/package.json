@@ -1,0 +1,8 @@
+{
+  "name": "leo-dungeon-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord-Bot fuer den Leo Dungeon RPG Server",
+  "main": "bot.js",
+  "scripts": { "start": "node bot.js" },
+  "dependencies": { "discord.js": "^14.16.3", "dotenv": "^16.4.5" }
+}

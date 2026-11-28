@@ -22,6 +22,7 @@ const path = require('path');
 const { Server } = require('socket.io');
 const { MongoClient } = require('mongodb');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -486,7 +487,8 @@ const CLASSES = {
   krieger: { name: 'Krieger', maxHp: 150, speed: 2.4, dmg: 18, range: 42, cooldown: 500, kind: 'melee', color: '#e74c3c' },
   magier:  { name: 'Magier',  maxHp: 80,  speed: 2.1, dmg: 27, range: 240, cooldown: 750, kind: 'ranged', color: '#3498db' },
   schurke: { name: 'Schurke', maxHp: 100, speed: 3.0, dmg: 10, range: 36, cooldown: 320, kind: 'melee', color: '#2ecc71', crit: 0.25 },
-  paladin: { name: 'Paladin', maxHp: 190, speed: 2.2, dmg: 15, range: 46, cooldown: 620, kind: 'melee', color: '#f1c40f' }
+  paladin: { name: 'Paladin', maxHp: 190, speed: 2.2, dmg: 15, range: 46, cooldown: 620, kind: 'melee', color: '#f1c40f' },
+  berserker: { name: 'Berserker', maxHp: 115, speed: 2.7, dmg: 30, range: 40, cooldown: 560, kind: 'melee', color: '#e67e22' }
 };
 
 function statsForLevel(clsKey, level) {
@@ -526,10 +528,19 @@ const SHOP_ITEMS = {
 // Trinkgeld-Link: hier die eigene Ko-fi-URL eintragen (z.B. 'https://ko-fi.com/name').
 // Solange leer, wird die Trinkgeld-Sektion im Shop ausgeblendet.
 const DONATE_LINKS = { kofi: '' };
+// Discord-Einladungslink (z.B. 'https://discord.gg/xyz') – wird im Spiel angezeigt, sobald gesetzt.
+const DISCORD_INVITE = 'https://discord.gg/xe793t62a2';
 const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert', gg: 'gratuliert', hello: 'grüßt' };
+function dailyDealKey() {
+  const day = Math.floor(Date.now() / 86400000);
+  const keys = Object.keys(SHOP_ITEMS);
+  return keys[day % keys.length];
+}
 function shopCost(itemKey, currentCount) {
   const def = SHOP_ITEMS[itemKey];
-  return def.baseCost + def.scale * currentCount;
+  let c = def.baseCost + def.scale * currentCount;
+  if (itemKey === dailyDealKey()) c = Math.round(c * 0.7);
+  return c;
 }
 
 // ---------------- Game-State ----------------
@@ -753,7 +764,8 @@ const ABILITIES2 = {
   krieger: { name: 'Bollwerk', icon: '🛡️', cd: 18000 },
   magier:  { name: 'Meteor', icon: '☄️', cd: 16000 },
   schurke: { name: 'Klingentanz', icon: '🗡️', cd: 14000 },
-  paladin: { name: 'Lichtwall', icon: '🔆', cd: 20000 }
+  paladin: { name: 'Lichtwall', icon: '🔆', cd: 20000 },
+  berserker: { name: 'Blutdurst', icon: '🧛', cd: 22000 }
 };
 function areaDamage(p, x, y, r, dmg) {
   if (!players[p.id] || p.dead) return;
@@ -812,6 +824,11 @@ function useAbility2(p) {
     p.guardUntil = now + 4000;
     p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.2));
     io.emit('abilityFx', { type: 'guard', x: p.x, y: p.y, r: 60, zone: p.zone, ms: 700 });
+  } else if (p.cls === 'berserker') {
+    // Blutdurst: 6 s lang heilt jeder Nahkampftreffer 20% des Schadens
+    p.lifestealUntil = now + 6000;
+    p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.1));
+    io.emit('abilityFx', { type: 'rage', x: p.x, y: p.y, r: 60, zone: p.zone, ms: 600 });
   }
 }
 
@@ -1145,11 +1162,13 @@ const ABILITIES = {
   krieger: { name: 'Wirbelschlag', icon: '🌀', cd: 8000 },
   magier:  { name: 'Feuernova', icon: '🔥', cd: 10000 },
   schurke: { name: 'Schattenschritt', icon: '👤', cd: 7000 },
-  paladin: { name: 'Heiliger Ruf', icon: '✨', cd: 9000 }
+  paladin: { name: 'Heiliger Ruf', icon: '✨', cd: 9000 },
+  berserker: { name: 'Blutrausch', icon: '🩸', cd: 14000 }
 };
 
 function rollDamage(p, def) {
   let dmg = p.dmg;
+  if (p.rageUntil && Date.now() < p.rageUntil) dmg = Math.round(dmg * 1.4);
   const cc = (def.crit || 0) + (p.critBonus || 0);
   if (cc > 0 && Math.random() < cc) dmg *= 2;
   if (p.critUntil && Date.now() < p.critUntil) { dmg *= 2; p.critUntil = 0; }
@@ -1212,6 +1231,13 @@ function useAbility(p) {
     p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.25));
     areaDamage(p, p.x, p.y, 100, Math.round(p.dmg * 1.2 * pw));
     io.emit('abilityFx', { type: 'nova', x: p.x, y: p.y, r: 100, zone: p.zone });
+  } else if (p.cls === 'berserker') {
+    // Blutrausch: opfert 20% max. LP fuer 6 s +40% Schaden
+    const cost = Math.round(p.maxHp * 0.2);
+    if (p.hp <= cost + 1) return notice(p, 'Dein Blut reicht nicht für den Blutrausch.');
+    p.hp -= cost;
+    p.rageUntil = now + 6000;
+    io.emit('abilityFx', { type: 'rage', x: p.x, y: p.y, r: 70, zone: p.zone, ms: 600 });
   }
 }
 
@@ -1453,11 +1479,14 @@ const COSMETICS = {
     wizard2: { name: 'Runehut', icon: '🔮', price: 500 }
   }
 };
-const PET_COST = 400;
+const PETS = {
+  wolf: { name: 'Wolf', icon: '🐺', cost: 400, cd: 1100 },
+  cat:  { name: 'Katze', icon: '🐱', cost: 900, cd: 800 }
+};
 const SKILL_RESET_COST = 200;
 const CLIENT_DEFS = {
   rarities: RARITIES, skills: SKILL_DEFS, achievements: ACHIEVEMENTS, cosmetics: COSMETICS, recipes: RECIPES,
-  inventoryMax: INVENTORY_MAX, upgradeMax: UPGRADE_MAX, petCost: PET_COST, resetCost: SKILL_RESET_COST
+  inventoryMax: INVENTORY_MAX, upgradeMax: UPGRADE_MAX, pets: PETS, resetCost: SKILL_RESET_COST
 };
 
 function newItemId() { return 'g' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36); }
@@ -1549,7 +1578,7 @@ function profileFromAccount(a) {
     inventory: (Array.isArray(a.inventory) ? a.inventory : []).map(sanitizeItem).filter(Boolean).slice(0, INVENTORY_MAX),
     equipment, skills, stats, cosmetics: eqc,
     essence: Math.max(0, Number(a.essence) || 0),
-    pet: a.pet === 'wolf' ? 'wolf' : null,
+    pet: PETS[a.pet] ? a.pet : null,
     achievements: Array.isArray(a.achievements) ? a.achievements.filter(id => ACH_IDS.has(id)) : [],
     guild: typeof a.guild === 'string' ? a.guild.slice(0, 40) : null,
     friends: (Array.isArray(a.friends) ? a.friends : []).filter(x => typeof x === 'string' && x.length >= 3 && x.length <= 20).slice(0, 50),
@@ -1647,7 +1676,8 @@ function updatePet(p) {
     tryMove(mapFor(p.zone), p.petPos, Math.cos(a) * 3.4, Math.sin(a) * 3.4, 8);
   }
   const now = Date.now();
-  if (p.dead || now - (p.petAttackAt || 0) < 1100) return;
+  const petCd = (PETS[p.pet] && PETS[p.pet].cd) || 1100;
+  if (p.dead || now - (p.petAttackAt || 0) < petCd) return;
   if (!isDungeonTier(p.zone) && p.zone !== 'bossroom' && p.zone !== 'raid') return;
   for (const id in monsters) {
     const m = monsters[id];
@@ -2151,6 +2181,21 @@ const lbCache = {};
 const ADMIN_USERNAMES = new Set(
   (process.env.ADMIN_USERNAMES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
 );
+const OWNER_USERNAMES = new Set(
+  (process.env.OWNER_USERNAMES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+);
+const MOD_USERNAMES = new Set(
+  (process.env.MOD_USERNAMES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+);
+const ROLE_TAGS = { owner: '👑 Owner', admin: '🛡 Admin', mod: '⭐ Mod', supporter: '☕ Supporter' };
+function roleFor(username, account) {
+  const u = String(username || '').toLowerCase();
+  if (OWNER_USERNAMES.has(u)) return 'owner';
+  if (ADMIN_USERNAMES.has(u)) return 'admin';
+  if (MOD_USERNAMES.has(u)) return 'mod';
+  if (account && account.supporter) return 'supporter';
+  return null;
+}
 
 // ---------------- Socket-Handling ----------------
 io.on('connection', (socket) => {
@@ -2172,6 +2217,7 @@ io.on('connection', (socket) => {
       const username = (data && data.username ? String(data.username) : '').trim().toLowerCase().slice(0, 20);
       const password = data && data.password ? String(data.password) : '';
       const name = (data && data.name ? String(data.name) : username).trim().slice(0, 16) || 'Held';
+      const sessionToken = data && data.token ? String(data.token).slice(0, 64) : null;
       const key = clientKey(socket);
       const blocked = authBlockedSeconds(key);
       if (blocked) return socket.emit('authError', `Zu viele Fehlversuche. Bitte warte ${blocked} Sekunden.`);
@@ -2179,7 +2225,7 @@ io.on('connection', (socket) => {
       if (!username || username.length < 3) {
         return socket.emit('authError', 'Benutzername muss mind. 3 Zeichen haben.');
       }
-      if (!password || password.length < 4) {
+      if (!sessionToken && (!password || password.length < 4)) {
         return socket.emit('authError', 'Passwort muss mind. 4 Zeichen haben.');
       }
       if (!accountsCol) {
@@ -2196,8 +2242,12 @@ io.on('connection', (socket) => {
         account = await createAccount(username, hash, classKey);
       } else {
         if (!account) { authFail(key); return socket.emit('authError', 'Diesen Account gibt es nicht. Bitte zuerst registrieren.'); }
-        const ok = await bcrypt.compare(password, account.passwordHash);
-        if (!ok) { authFail(key); return socket.emit('authError', 'Falsches Passwort.'); }
+        if (sessionToken) {
+          if (account.sessionToken !== sessionToken) { authFail(key); return socket.emit('authError', 'Deine Sitzung ist abgelaufen. Bitte neu einloggen.'); }
+        } else {
+          const ok = await bcrypt.compare(password, account.passwordHash);
+          if (!ok) { authFail(key); return socket.emit('authError', 'Falsches Passwort.'); }
+        }
         authOk(key);
         if (account.banned) return socket.emit('authError', 'Dieser Account ist gesperrt.');
         // Nur eine Sitzung pro Account: die alte wird gespeichert und beendet (verhindert Item-Duplikate)
@@ -2212,13 +2262,18 @@ io.on('connection', (socket) => {
         }
       }
 
+      // Session-Token fuer "angemeldet bleiben" (Client speichert ihn lokal)
+      const newSessionToken = crypto.randomBytes(24).toString('hex');
+      const chosenName = (data && data.name && String(data.name).trim()) ? name : (account.displayName || username);
+      await accountsCol.updateOne({ username }, { $set: { sessionToken: newSessionToken, displayName: chosenName } });
+
       const stats = statsForLevel(account.cls, account.level);
       const loginTier = tierForLevel(account.level);
       const loginSpawn = randomTierSpawn(loginTier);
       players[socket.id] = {
         id: socket.id,
         username,
-        name: name || username,
+        name: chosenName,
         cls: account.cls,
         zone: loginTier,
         x: loginSpawn.x,
@@ -2238,6 +2293,7 @@ io.on('connection', (socket) => {
         upgHp: account.upgHp || 0,
         upgSpeed: account.upgSpeed || 0,
         isAdmin: ADMIN_USERNAMES.has(username),
+        role: roleFor(username, account),
         abilityReadyAt: 0,
         critUntil: 0,
         quests: sanitizeQuests(account.quests),
@@ -2265,6 +2321,7 @@ io.on('connection', (socket) => {
       }
       socket.emit('init', {
         you: socket.id,
+        session: newSessionToken,
         dungeonTiers: dungeonTiersPayload,
         abilities: ABILITIES,
         abilities2: ABILITIES2,
@@ -2278,7 +2335,9 @@ io.on('connection', (socket) => {
         tile: TILE,
         classes: CLASSES,
         shop: SHOP_ITEMS,
+        deal: dailyDealKey(),
         donate: DONATE_LINKS,
+        discord: DISCORD_INVITE,
         isAdmin: players[socket.id].isAdmin
       });
       sendQuests(players[socket.id]);
@@ -2357,6 +2416,7 @@ io.on('connection', (socket) => {
         let dmg = rollDamage(p, def);
         closest.hp -= dmg;
         if (closest.raid) creditRaid(closest, p, dmg);
+        if (p.lifestealUntil && Date.now() < p.lifestealUntil) p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg * 0.2));
         io.emit('hit', { x: closest.x, y: closest.y, dmg });
         if (closest.hp <= 0) {
           onMonsterKilled(closest, p);
@@ -2630,14 +2690,16 @@ io.on('connection', (socket) => {
     sendProfile(p); saveAccountProgress(p);
   });
 
-  socket.on('buyPet', () => {
+  socket.on('buyPet', (data) => {
     const p = players[socket.id];
     if (!p || p.pet) return;
-    if (p.gold < PET_COST) return notice(p, `Du brauchst ${PET_COST} Gold.`);
-    p.gold -= PET_COST;
-    p.pet = 'wolf';
+    const key = data && PETS[data.pet] ? data.pet : 'wolf';
+    const def = PETS[key];
+    if (p.gold < def.cost) return notice(p, `Du brauchst ${def.cost} Gold.`);
+    p.gold -= def.cost;
+    p.pet = key;
     sendProfile(p); saveAccountProgress(p);
-    notice(p, '🐺 Dein Wolf begleitet dich jetzt!');
+    notice(p, `${def.icon} Dein ${def.name} begleitet dich jetzt!`);
   });
 
   socket.on('leaderboard', async (d) => {
@@ -2815,6 +2877,18 @@ io.on('connection', (socket) => {
     notice(p, `${name} wurde entsperrt.`);
   });
 
+  socket.on('adminSupporter', async (d) => {
+    const p = players[socket.id];
+    if (!p || !p.isAdmin || !accountsCol) return;
+    const name = (d && d.username ? String(d.username) : '').trim().toLowerCase().slice(0, 20);
+    const on = !!(d && d.on);
+    if (name.length < 3) return;
+    await accountsCol.updateOne({ username: name }, { $set: { supporter: on } });
+    const t = findOnline(name);
+    if (t) { t.role = roleFor(t.username, { supporter: on }); notice(t, on ? '☕ Du bist jetzt Supporter! Danke für deine Unterstützung!' : 'Dein Supporter-Status wurde entfernt.'); }
+    notice(p, `${name}: Supporter ${on ? 'verliehen' : 'entfernt'}.`);
+  });
+
   socket.on('adminAction', (d) => {
     const p = players[socket.id];
     if (!p || !p.isAdmin) return;
@@ -2831,6 +2905,16 @@ io.on('connection', (socket) => {
     else if (kind === 'boss') { bossCycle(); io.emit('announcement', `👑 ${p.name} hat den Boss sofort herbeigerufen!`); }
     else if (kind === 'heal') { for (const id in players) { const pl = players[id]; pl.hp = pl.maxHp; pl.dead = false; } io.emit('announcement', `💚 ${p.name} hat alle vollständig geheilt!`); }
     else if (kind === 'announce') { const text = String((d && d.text) || '').slice(0, 140).trim(); if (text) io.emit('announcement', `📢 ${text}`); }
+  });
+
+  socket.on('logout', async () => {
+    const p = players[socket.id];
+    if (!p) return;
+    if (accountsCol) await accountsCol.updateOne({ username: p.username }, { $unset: { sessionToken: '' } });
+    await saveAccountProgress(p);
+    delete players[socket.id];
+    leaveParty(p);
+    disconnectSocket(socket.id);
   });
 
   socket.on('guildInfo', () => { const p = players[socket.id]; if (p) sendGuild(p); });
@@ -2956,7 +3040,7 @@ io.on('connection', (socket) => {
     const key = data && data.tier;
     const tierDef = DUNGEON_TIERS[key];
     if (!tierDef) return;
-    if (p.level < tierDef.minLevel) {
+    if (p.level < tierDef.minLevel && p.role !== 'owner') {
       return socket.emit('shopError', `Benötigt Level ${tierDef.minLevel} (du bist Level ${p.level}).`);
     }
     p.zone = key;
@@ -3290,7 +3374,7 @@ io.on('connection', (socket) => {
     if (!(p.zone === 'town' || isDungeonTier(p.zone))) return notice(p, 'Klassenwechsel geht nur in der Stadt oder im Dungeon.');
     if (p.gold < CLASS_CHANGE_COST) return notice(p, `Ein Klassenwechsel kostet ${CLASS_CHANGE_COST} Gold.`);
     p.gold -= CLASS_CHANGE_COST;
-    p.cls = cls; p.abilityReadyAt = 0; p.ability2ReadyAt = 0; p.critUntil = 0; p.guardUntil = 0;
+    p.cls = cls; p.abilityReadyAt = 0; p.ability2ReadyAt = 0; p.critUntil = 0; p.guardUntil = 0; p.rageUntil = 0; p.lifestealUntil = 0;
     recomputeStats(p);
     p.hp = p.maxHp;
     notice(p, `🔄 Du bist jetzt ${CLASSES[cls].name}!`);
@@ -3503,6 +3587,7 @@ function leanOf(p) {
     pet: p.pet, px: p.petPos ? Math.round(p.petPos.x) : null, py: p.petPos ? Math.round(p.petPos.y) : null,
     fx: fxFlags(p),
     tag: p.guildTag || null,
+    role: p.role || null,
     prestige: p.prestige || 0,
     party: p.partyId || null,
     partyLeader: !!(p.partyId && parties[p.partyId] && parties[p.partyId].leader === p.id)
