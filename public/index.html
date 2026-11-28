@@ -372,26 +372,29 @@
   input { -webkit-user-select: text; user-select: text; }
   #joyZone { position:absolute; left:0; bottom:0; width:38%; height:78%; z-index:12; touch-action:none; }
   #joyBase { pointer-events:none; left:max(26px, env(safe-area-inset-left)); }
-  #mobileActions { right:max(20px, env(safe-area-inset-right)); flex-wrap:wrap-reverse; max-height:78vh; align-content:flex-end; }
+  #mobileActions { right:max(20px, env(safe-area-inset-right)); flex-wrap:wrap-reverse; max-height:72vh; align-content:flex-end; gap:8px; }
+  .touch-active #mobileActions { bottom:22px; right:16px; }
+  .touch-active .mBtn { width:54px; height:54px; font-size:20px; }
+  .touch-active #joyBase { bottom:18px; left:18px; width:96px; height:96px; }
+  .touch-active #joyStick { width:42px; height:42px; margin:-21px; }
   #interactBtn { z-index:14; }
   #orientHint { display:none; position:absolute; top:6px; left:50%; transform:translateX(-50%); z-index:32; background:#0d1117ee; color:#ffe9a8; border:1px solid var(--accent); border-radius:14px; padding:5px 12px; font-size:11px; white-space:nowrap; }
   #menuOptionChat { display:none; }
   .touch-active #menuOptionChat { display:block; }
   .touch-active #chatInput { display:none !important; }
-  .touch-active #chatBox { bottom:150px; width:min(320px, 62vw); max-height:110px; font-size:14px; }
+  .touch-active #chatBox { bottom:140px; width:min(300px, 58vw); max-height:96px; font-size:13px; }
   /* Groessere HUD-Elemente auf Touch-Geraeten */
-  .touch-active .barBox { width:205px; padding:8px 10px; }
-  .touch-active .barLabel { font-size:13px; }
-  .touch-active .barOuter { height:12px; }
-  .touch-active #zoneLabel { font-size:14px; padding:6px 16px; }
-  .touch-active #minimap { width:205px; height:auto; max-width:none; }
-  .touch-active #questHud, .touch-active #partyHud { font-size:12px; max-width:210px; }
-  .touch-active #raidBarTxt { font-size:14px; }
-  .touch-active #raidBar .rbOuter { height:14px; }
-  .touch-active #bossHudTxt { font-size:15px; }
-  .touch-active #bossHud .bhOuter { height:16px; }
-  .touch-active #buffHud { font-size:13px; gap:8px; }
-  .touch-active #chatBox div { font-size:14px; }
+  .touch-active .barBox { width:195px; padding:7px 9px; }
+  .touch-active .barLabel { font-size:12px; }
+  .touch-active .barOuter { height:11px; }
+  .touch-active #zoneLabel { font-size:13px; padding:5px 14px; }
+  .touch-active #minimap { width:190px; height:auto; max-width:none; }
+  .touch-active #questHud, .touch-active #partyHud { font-size:11px; max-width:200px; }
+  .touch-active #raidBarTxt { font-size:13px; }
+  .touch-active #bossHudTxt { font-size:14px; }
+  .touch-active #bossHud .bhOuter { height:15px; }
+  .touch-active #buffHud { font-size:12px; gap:7px; }
+  .touch-active #chatBox div { font-size:13px; }
   .touch-active .menuOption, .touch-active #bpBody button, .touch-active #bpTabs button, .touch-active .shopItem button,
   .touch-active .adminSingleBtn, .touch-active #tiersPanel button, .touch-active #questsPanel button, .touch-active #bossroomPanel button, .touch-active #pvpPanel button {
     min-height:40px; font-size:13px; padding:8px 12px;
@@ -734,6 +737,16 @@ let nearInteract = null, interactLabel = '';
 
 const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 if (isTouchDevice) document.body.classList.add('touch-active');
+// Auf Geraeten mit Tastatur (z.B. iPad + WASD): Touch-Steuerung ausblenden, sobald eine movement Taste gedrueckt wird
+if (isTouchDevice) {
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (/^(KeyW|KeyA|KeyS|KeyD|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Space)$/.test(e.code) || /^[wasd ]$/i.test(e.key)) {
+      document.body.classList.remove('touch-active');
+    }
+  }, { passive: true });
+  document.addEventListener('touchstart', () => document.body.classList.add('touch-active'), { passive: true });
+}
 
 let SHOP_ITEMS = {};
 let DEAL = null;
