@@ -313,3 +313,8 @@ client.on('messageCreate', async (msg) => {
 });
 
 client.login(TOKEN);
+
+// Keep-Alive HTTP-Server (noetig fuer Render-Hosting: gratis Tarife schlafen nach 15 Min. ohne Requests ein)
+const http = require('http');
+const keepAlive = http.createServer((req, res) => { res.writeHead(200); res.end('Dungeon Bot laeuft'); });
+keepAlive.listen(process.env.PORT || 3001, () => console.log('Keep-Alive auf Port', process.env.PORT || 3001));
