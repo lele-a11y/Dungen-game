@@ -16,6 +16,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.MessageContent // HINWEIS: im Developer Portal aktivieren!
   ]
 });
@@ -202,6 +203,37 @@ async function setupServer(guild) {
 
 client.once('ready', () => {
   console.log(`Bot eingeloggt als ${client.user.tag}`);
+});
+
+// ---------- Auto-Rolle + Logging ----------
+function findModLog(guild) {
+  return guild.channels.cache.find(c => c.name === 'mod-log');
+}
+
+client.on('guildMemberAdd', async (member) => {
+  const spieler = member.guild.roles.cache.find(r => r.name === '🧙 Spieler');
+  if (spieler) { try { await member.roles.add(spieler); } catch (e) { console.error('Autorole fehlgeschlagen:', e.message); } }
+  const log = findModLog(member.guild);
+  if (log) log.send(`📥 **${member.user.tag}** ist beigetreten (${member.guild.memberCount} Member)`).catch(() => {});
+});
+
+client.on('guildMemberRemove', (member) => {
+  const log = findModLog(member.guild);
+  if (log) log.send(`📤 **${member.user.tag}** hat den Server verlassen`).catch(() => {});
+});
+
+client.on('messageDelete', (msg) => {
+  if (msg.author && !msg.author.bot) {
+    const log = findModLog(msg.guild);
+    if (log) log.send(`🗑️ **${msg.author.tag}** löschte in <#${msg.channel.id}>: \`\`\`${(msg.content || '').slice(0, 200)}\`\`\``).catch(() => {});
+  }
+});
+
+client.on('messageUpdate', (oldMsg, newMsg) => {
+  if (oldMsg.author && !oldMsg.author.bot && oldMsg.content !== newMsg.content) {
+    const log = findModLog(oldMsg.guild);
+    if (log) log.send(`✏️ **${oldMsg.author.tag}** bearbeitete in <#${oldMsg.channel.id}>:\nvorher: \`${(oldMsg.content || '').slice(0, 150)}\`\nnachher: \`${(newMsg.content || '').slice(0, 150)}\``).catch(() => {});
+  }
 });
 
 client.on('messageCreate', async (msg) => {
