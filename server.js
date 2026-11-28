@@ -528,6 +528,8 @@ const SHOP_ITEMS = {
 // Trinkgeld-Link: hier die eigene Ko-fi-URL eintragen (z.B. 'https://ko-fi.com/name').
 // Solange leer, wird die Trinkgeld-Sektion im Shop ausgeblendet.
 const DONATE_LINKS = { kofi: '' };
+// Discord-Einladungslink (z.B. 'https://discord.gg/xyz') – wird im Spiel angezeigt, sobald gesetzt.
+const DISCORD_INVITE = '';
 const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert', gg: 'gratuliert', hello: 'grüßt' };
 function dailyDealKey() {
   const day = Math.floor(Date.now() / 86400000);
@@ -2331,6 +2333,7 @@ io.on('connection', (socket) => {
         shop: SHOP_ITEMS,
         deal: dailyDealKey(),
         donate: DONATE_LINKS,
+        discord: DISCORD_INVITE,
         isAdmin: players[socket.id].isAdmin
       });
       sendQuests(players[socket.id]);

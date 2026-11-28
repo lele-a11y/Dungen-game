@@ -3,7 +3,11 @@
 // Legt per !setup die Server-Struktur an und vergibt Rollen.
 // ============================================================
 require('dotenv').config();
-const { Client, GatewayIntentBits, PermissionFlagsBits, ChannelType } = require('discord.js');
+const {
+  Client, GatewayIntentBits, PermissionFlagsBits, ChannelType,
+  AutoModerationRuleEventType, AutoModerationRuleTriggerType, AutoModerationActionType,
+  AutoModerationRuleKeywordPresetType
+} = require('discord.js');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 if (!TOKEN) { console.error('DISCORD_TOKEN fehlt in .env'); process.exit(1); }
@@ -54,6 +58,42 @@ const STRUCTURE = [
       { name: 'vorschlaege', topic: 'Feature-Wuensche' }
     ]
   }
+];
+
+// AutoMod-Regeln fuer !setup (name => Config)
+const AUTOMOD_RULES = [
+  {
+    name: 'Spam-Schutz',
+    triggerType: AutoModerationRuleTriggerType.Spam,
+    triggerMetadata: {},
+    actions: ['block', 'alert']
+  },
+  {
+    name: 'Mention-Spam',
+    triggerType: AutoModerationRuleTriggerType.MentionSpam,
+    triggerMetadata: { mentionTotalLimit: 5 },
+    actions: ['block', 'alert']
+  },
+  {
+    name: 'Beleidigungen & Hass',
+    triggerType: AutoModerationRuleTriggerType.KeywordPreset,
+    triggerMetadata: { presets: [AutoModerationRuleKeywordPresetType.Profanity, AutoModerationRuleKeywordPresetType.SexualContent, AutoModerationRuleKeywordPresetType.Slurs] },
+    actions: ['block', 'alert']
+  },
+  {
+    name: 'Keyword-Filter',
+    triggerType: AutoModerationRuleTriggerType.Keyword,
+    triggerMetadata: { keywordFilter: ['hacker', 'scam', 'free nitro', 'discord.gg/unser'] },
+    actions: ['block', 'alert']
+  }
+];
+
+// Empfohlene Bots, die man zusaetzlich einladen kann (Discord erlaubt keine Auto-Einladung)
+const BOT_TIPS = [
+  '🤖 **Carl-bot** – Auto-Rollen, Logging, Reactions (carl.gg)',
+  '🤖 **Dyno** oder **MEE6** – Moderation, AutoMod-Extras, Musik',
+  '🤖 **Ticket Tool** – Support-Tickets fuer Spieler',
+  '🤖 **Server Tags** – coole Rollen-Anzeige'
 ];
 
 const REGELN_TEXT = [
@@ -118,6 +158,46 @@ async function setupServer(guild) {
     // Supporter-Rolle soll sichtbar sein (hoistet sie ueber normale Rollen)
     try { await supporterRole.setHoist(true); } catch (e) {}
   }
+
+  // #mod-log Channel (nur Admins/Mods sehen ihn)
+  const supportCat = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '🛠 Support');
+  const adminRole = guild.roles.cache.find(r => r.name === '🛡 Admin');
+  const modRole = guild.roles.cache.find(r => r.name === '⭐ Mod');
+  let modLog = guild.channels.cache.find(c => c.name === 'mod-log');
+  if (!modLog && supportCat) {
+    const overwrites = [
+      { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: me.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+    ];
+    if (adminRole) overwrites.push({ id: adminRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] });
+    if (modRole) overwrites.push({ id: modRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] });
+    modLog = await guild.channels.create({ name: 'mod-log', type: ChannelType.GuildText, parent: supportCat.id, topic: 'AutoMod-Alarme und Moderations-Logs', permissionOverwrites: overwrites });
+  }
+
+  // AutoMod-Regeln anlegen (falls noch nicht vorhanden)
+  if (modLog) {
+    const existing = await guild.autoModerationRules.fetch();
+    for (const rule of AUTOMOD_RULES) {
+      if (existing.some(r => r.name === rule.name)) continue;
+      const actions = rule.actions.map(a => a === 'block'
+        ? { type: AutoModerationActionType.BlockMessage }
+        : { type: AutoModerationActionType.SendAlertMessage, metadata: { channel: modLog.id } });
+      try {
+        await guild.autoModerationRules.create({
+          name: rule.name,
+          eventType: AutoModerationRuleEventType.MessageSend,
+          triggerType: rule.triggerType,
+          triggerMetadata: rule.triggerMetadata,
+          actions,
+          enabled: true,
+          reason: 'Dungeon Bot setup'
+        });
+      } catch (e) {
+        console.error(`AutoMod-Regel "${rule.name}" fehlgeschlagen:`, e.message);
+      }
+    }
+  }
+  return modLog;
 }
 
 client.once('ready', () => {
@@ -136,8 +216,12 @@ client.on('messageCreate', async (msg) => {
     if (!msg.member.permissions.has(PermissionFlagsBits.ManageGuild)) return msg.reply('❌ Du brauchst die Berechtigung „Server verwalten".');
     try {
       await msg.reply('🏗️ Baue den Server auf...');
-      await setupServer(msg.guild);
-      await msg.reply('✅ Fertig! Rollen und Channels wurden angelegt.');
+      const modLog = await setupServer(msg.guild);
+      await msg.reply(
+        '✅ Fertig! Rollen, Channels und AutoMod-Regeln wurden angelegt.\n' +
+        (modLog ? `📋 AutoMod-Alarme landen in <#${modLog.id}>.\n` : '') +
+        '\n**Empfohlene Bots zum Nachladen:**\n' + BOT_TIPS.map(t => '- ' + t).join('\n')
+      );
     } catch (e) {
       console.error(e);
       await msg.reply(`❌ Fehler: ${e.message}`);

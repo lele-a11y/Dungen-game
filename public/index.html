@@ -476,6 +476,7 @@
       <p style="margin:6px 0;" class="muted">Chat-Emotes: /wave /dance /cheer /cry /laugh /flex /gg /hello · /stats für Statistiken · /roll /flip</p>
       <p style="margin:6px 0;" id="miscTip" class="muted"></p>
       <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="menuOption" id="miscDiscord" style="flex:1;">💬 Discord</button>
         <button class="menuOption" id="miscKofi" style="flex:1;">☕ Trinkgeld</button>
         <button class="menuOption" id="miscClose" style="flex:1;">Schließen</button>
       </div>
@@ -677,6 +678,9 @@
       </div>
       <div id="authMsg" style="color:#ff8080; font-size:12px; min-height:16px; margin-bottom:8px; text-align:center;"></div>
       <button id="playBtn">Einloggen &amp; Ins Dungeon!</button>
+      <div id="discordLinkWrap" style="display:none; margin-top:10px; text-align:center;">
+        <a id="discordLink" href="#" target="_blank" rel="noopener" style="color:#8ab4ff; font-size:13px;">💬 Discord beitreten</a>
+      </div>
     </div>
   </div>
 </div>
@@ -717,6 +721,7 @@ let SHOP_ITEMS = {};
 let DEAL = null;
 const SHOP_CATS = { verbrauch: '🧪 Verbrauch', upgrades: '⚔️ Upgrades', echtgeld: '💰 Echtgeld (Trinkgeld)' };
 let DONATE = { kofi: '' };
+let DISCORD_INVITE = '';
 function shopCostClient(key, count) {
   const d = SHOP_ITEMS[key];
   let c = d.baseCost + d.scale * count;
@@ -1674,6 +1679,7 @@ function startGame() {
     if (data.session && username) { try { localStorage.setItem('dungeonSession', JSON.stringify({ u: username, t: data.session })); } catch (e) {} }
     isAdmin = !!data.isAdmin;
     if (data.donate) DONATE = data.donate;
+    if (data.discord) { DISCORD_INVITE = data.discord; const w = document.getElementById('discordLinkWrap'); if (w && DISCORD_INVITE) { document.getElementById('discordLink').href = DISCORD_INVITE; w.style.display = 'block'; } }
     if (magnetOn) socket.emit('setMagnet', true);
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'flex';
@@ -2053,10 +2059,12 @@ function toggleMisc(force) {
     const day = Math.floor(Date.now() / 86400000);
     document.getElementById('miscTip').textContent = '💡 ' + MISC_TIPS[day % MISC_TIPS.length];
   }
+  document.getElementById('miscDiscord').disabled = !DISCORD_INVITE;
   document.getElementById('miscKofi').disabled = !DONATE.kofi;
 }
 document.getElementById('menuOptionSonstiges').addEventListener('click', () => { toggleMenu(false); toggleMisc(true); });
 document.getElementById('miscClose').addEventListener('click', () => toggleMisc(false));
+document.getElementById('miscDiscord').addEventListener('click', () => { if (DISCORD_INVITE) window.open(DISCORD_INVITE, '_blank', 'noopener'); });
 document.getElementById('miscKofi').addEventListener('click', () => { if (DONATE.kofi) window.open(DONATE.kofi, '_blank', 'noopener'); });
 const smooth = new Map();      // weiche Bewegung: Schluessel -> { x, y, fx, fy, mv, seen }
 const particles = [];
