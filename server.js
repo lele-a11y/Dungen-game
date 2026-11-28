@@ -66,7 +66,7 @@ async function createAccount(username, passwordHash, cls) {
   const doc = {
     username, passwordHash, cls,
     level: 1, xp: 0, gold: 0, potions: 1, speedPotions: 0,
-    upgDmg: 0, upgHp: 0, upgSpeed: 0, quests: [],
+    upgDmg: 0, upgHp: 0, upgSpeed: 0, upgLuck: 0, quests: [],
     inventory: [], equipment: {}, skills: {}, essence: 0, cosmetics: {}, pet: null,
     stats: {}, achievements: [], daily: {}, friends: [], guild: null,
     keys: 0, prestige: 0, season: { id: '', points: 0 }, week: { id: '', points: 0 }, bossBest: {},
@@ -84,9 +84,9 @@ async function saveAccountProgress(p) {
       { username: p.username },
       { $set: {
         level: p.level, xp: p.xp, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions, cls: p.cls,
-        upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, quests: p.quests || [],
+        upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, upgLuck: p.upgLuck || 0, quests: p.quests || [],
         inventory: p.inventory || [], equipment: p.equipment || {}, skills: p.skills || {}, essence: p.essence || 0,
-        cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null,
+        cosmetics: p.cosmetics || {}, pet: p.pet || null, stats: p.stats || {}, achievements: p.achievements || [], daily: p.daily || {}, friends: p.friends || [], guild: p.guild || null, displayName: p.name || p.username,
         keys: p.keys || 0, prestige: p.prestige || 0, season: p.season || { id: '', points: 0 },
         week: p.week || { id: '', points: 0 }, bossBest: p.bossBest || {},
         storage: p.storage || { items: [], gold: 0, essence: 0, potions: 0, speedPotions: 0 },
@@ -523,8 +523,10 @@ const SHOP_ITEMS = {
   speedpotion: { label: '⚡ Tempo-Trank (15s +60% Tempo)', cat: 'verbrauch', baseCost: 15, scale: 0, maxCount: null },
   dmg: { label: '⚔️ Waffe schärfen (+2 Schaden)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
   hp: { label: '🛡️ Rüstung verstärken (+15 max. HP)', cat: 'upgrades', baseCost: 25, scale: 20, maxCount: 10 },
-  speed: { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 }
+  speed: { label: '👢 Leichtere Stiefel (+Tempo)', cat: 'upgrades', baseCost: 30, scale: 25, maxCount: 5 },
+  luck: { label: '🍀 Glücksstein (+seltenere Beute)', cat: 'upgrades', baseCost: 40, scale: 30, maxCount: 8 }
 };
+const UPG_KEYS = { dmg: 'upgDmg', hp: 'upgHp', speed: 'upgSpeed', luck: 'upgLuck' };
 // Trinkgeld-Link: hier die eigene Ko-fi-URL eintragen (z.B. 'https://ko-fi.com/name').
 // Solange leer, wird die Trinkgeld-Sektion im Shop ausgeblendet.
 const DONATE_LINKS = { kofi: '' };
@@ -971,8 +973,8 @@ function onRaidBossKilled(m, killer) {
     c.stats.goldEarned += gold; c.stats.raidKills++; c.stats.bossKills++;
     giveKey(c, 2);
     if (rank === 1) giveItem(c, genItem(c.level, Math.random() < 0.6 ? 3 : 2));
-    else if (rank <= 3) giveItem(c, genItem(c.level, Math.max(2, rollRarity(2))));
-    else if (share >= 0.05) giveItem(c, genItem(c.level, Math.max(1, rollRarity(1.5))));
+    else if (rank <= 3) giveItem(c, genItem(c.level, Math.max(2, rollRarity(2 + luckOf(c)))));
+    else if (share >= 0.05) giveItem(c, genItem(c.level, Math.max(1, rollRarity(1.5 + luckOf(c)))));
     questProgress(c, 'kill', 1, 'boss');
     questProgress(c, 'gold', gold);
     addSeasonPoints(c, pts);
@@ -1548,6 +1550,7 @@ function equipmentBonus(p) {
   return b;
 }
 function goldBonus(p) { return 1 + 0.06 * ((p.skills && p.skills.greed) || 0); }
+function luckOf(p) { return 0.35 * ((p && p.upgLuck) || 0); }
 function skillPointsFree(p) {
   let spent = 0;
   for (const k in SKILL_DEFS) spent += (p.skills && p.skills[k]) || 0;
@@ -1645,11 +1648,11 @@ function giveItem(p, item) {
 function dropGear(killer, m) {
   const lvl = killer.level;
   if (m.type === 'boss') {
-    for (let i = 0; i < 3; i++) giveItem(killer, genItem(lvl, Math.max(i === 0 ? 2 : 1, rollRarity(2))));
+    for (let i = 0; i < 3; i++) giveItem(killer, genItem(lvl, Math.max(i === 0 ? 2 : 1, rollRarity(2 + luckOf(killer)))));
   } else if (m.type === 'treasure') {
-    giveItem(killer, genItem(lvl, rollRarity(1)));
+    giveItem(killer, genItem(lvl, rollRarity(1 + luckOf(killer))));
   } else if (Math.random() < 0.05) {
-    giveItem(killer, genItem(lvl, rollRarity(0)));
+    giveItem(killer, genItem(lvl, rollRarity(0 + luckOf(killer))));
   }
 }
 function checkAchievements(p) {
@@ -2307,6 +2310,7 @@ io.on('connection', (socket) => {
         upgDmg: account.upgDmg || 0,
         upgHp: account.upgHp || 0,
         upgSpeed: account.upgSpeed || 0,
+        upgLuck: account.upgLuck || 0,
         isAdmin: ADMIN_USERNAMES.has(username),
         role: roleFor(username, account),
         abilityReadyAt: 0,
@@ -3112,16 +3116,16 @@ io.on('connection', (socket) => {
     questProgress(p, 'chest', 1);
     questProgress(p, 'gold', gold);
     if (chest.kind === 'vault') {
-      giveItem(p, genItem(p.level, Math.max(2, rollRarity(2))));
-      giveItem(p, genItem(p.level, rollRarity(1.5)));
+      giveItem(p, genItem(p.level, Math.max(2, rollRarity(2 + luckOf(p)))));
+      giveItem(p, genItem(p.level, rollRarity(1.5 + luckOf(p))));
       p.essence += 10 + Math.round(lootMult * 4);
       p.stats.vaults++; addSeasonPoints(p, 6);
     } else if (chest.kind === 'secret') {
-      if (Math.random() < 0.5) giveItem(p, genItem(p.level, Math.max(1, rollRarity(1.2))));
+      if (Math.random() < 0.5) giveItem(p, genItem(p.level, Math.max(1, rollRarity(1.2 + luckOf(p)))));
       if (Math.random() < 0.4) giveKey(p, 1);
       addSeasonPoints(p, 3);
     } else {
-      if (Math.random() < 0.25) giveItem(p, genItem(p.level, rollRarity(0.5)));
+      if (Math.random() < 0.25) giveItem(p, genItem(p.level, rollRarity(0.5 + luckOf(p))));
       if (Math.random() < 0.10) giveKey(p, 1);
     }
     checkAchievements(p);
@@ -3158,7 +3162,7 @@ io.on('connection', (socket) => {
       p.gold -= cost;
       p.speedPotions += 1;
     } else {
-      const countKey = type === 'dmg' ? 'upgDmg' : (type === 'hp' ? 'upgHp' : 'upgSpeed');
+      const countKey = UPG_KEYS[type];
       const current = p[countKey];
       if (def.maxCount !== null && current >= def.maxCount) {
         return socket.emit('shopError', 'Maximum für dieses Upgrade erreicht.');
@@ -3222,6 +3226,13 @@ io.on('connection', (socket) => {
     if (!p || !msg) return;
     if (!chatAllowed(p)) return;
     const text = String(msg).slice(0, 80);
+    if (text.startsWith('/nick')) {
+      const nn = text.slice(5).trim().replace(/\s+/g, ' ');
+      if (nn.length < 3 || nn.length > 16) return notice(p, 'Name: 3 bis 16 Zeichen.');
+      p.name = nn;
+      saveAccountProgress(p);
+      return notice(p, `Dein Name ist jetzt ${nn}.`);
+    }
     if (text === '/roll') { io.emit('chat', { name: p.name, text: 'würfelt ' + (1 + Math.floor(Math.random() * 100)) + '!' }); return; }
     if (text === '/flip') { io.emit('chat', { name: p.name, text: 'wirft eine Münze: ' + (Math.random() < 0.5 ? 'Kopf!' : 'Zahl!') }); return; }
     io.emit('chat', { name: p.name, text });
@@ -3644,7 +3655,7 @@ function fullOf(p) {
   return Object.assign(leanOf(p), {
     xp: p.xp, xpNext: p.xpNext, gold: p.gold, potions: p.potions, speedPotions: p.speedPotions,
     speedBoostUntil: p.speedBoostUntil, abilityReadyAt: p.abilityReadyAt || 0, essence: p.essence, critUntil: p.critUntil || 0,
-    upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed,
+    upgDmg: p.upgDmg, upgHp: p.upgHp, upgSpeed: p.upgSpeed, upgLuck: p.upgLuck || 0,
     keys: p.keys || 0, ability2ReadyAt: p.ability2ReadyAt || 0, guardUntil: p.guardUntil || 0, seasonPts: p.season ? p.season.points : 0,
     bossBest: p.bossBest || {}
   });
