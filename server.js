@@ -529,7 +529,7 @@ const SHOP_ITEMS = {
 // Solange leer, wird die Trinkgeld-Sektion im Shop ausgeblendet.
 const DONATE_LINKS = { kofi: '' };
 // Discord-Einladungslink (z.B. 'https://discord.gg/xyz') – wird im Spiel angezeigt, sobald gesetzt.
-const DISCORD_INVITE = '';
+const DISCORD_INVITE = 'https://discord.gg/xe793t62a2';
 const EMOTES = { wave: 'winkt', dance: 'tanzt', cheer: 'jubelt', cry: 'weint', laugh: 'lacht', flex: 'posiert', gg: 'gratuliert', hello: 'grüßt' };
 function dailyDealKey() {
   const day = Math.floor(Date.now() / 86400000);
