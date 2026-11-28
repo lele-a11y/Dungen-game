@@ -547,6 +547,7 @@ function shopCost(itemKey, currentCount) {
 const players = {};     // id -> player
 const monsters = {};    // id -> monster
 const tpaRequests = {}; // targetSocketId -> { fromId, expiresAt }
+const duelRequests = {}; // targetSocketId -> { fromId, expiresAt }
 const items = {};       // id -> ground item
 const projectiles = {}; // id -> projectile
 
@@ -1034,7 +1035,21 @@ function applyPvpDamage(target, dmg, attacker) {
     io.to(target.id).emit('died', { by: target.deadBy });
     setTimeout(() => respawnPlayer(target), 2000);
     if (attacker && attacker !== target) { attacker.stats.pvpKills++; addSeasonPoints(attacker, 5); questProgress(attacker, 'pvp', 1); checkAchievements(attacker); }
+    if (target.duelWith) resolveDuel(target, attacker);
   }
+}
+
+function resolveDuel(loser, winner) {
+  const w = winner && winner.id === loser.duelWith ? winner : players[loser.duelWith];
+  loser.duelWith = null;
+  if (!w) return;
+  w.duelWith = null;
+  const bonus = 100 + loser.level * 15;
+  w.gold += bonus;
+  grantXp(w, 150 + loser.level * 20);
+  io.emit('announcement', `⚔️ ${w.name} hat ${loser.name} im Duell besiegt!`);
+  notice(w, `🏆 Duell gewonnen! +${bonus} Gold`);
+  notice(loser, '💀 Duell verloren.');
 }
 
 function respawnPlayer(p) {
@@ -2510,6 +2525,33 @@ io.on('connection', (socket) => {
     if (requester) io.to(requester.id).emit('tpaResult', { accepted: false, otherName: me ? me.name : '' });
   });
 
+  socket.on('duelRequest', (data) => {
+    const p = players[socket.id];
+    const target = players[data && data.targetId];
+    if (!p || !target || p.dead || target.dead || target.id === p.id) return;
+    if (p.zone === 'raid' || target.zone === 'raid' || p.zone === 'bossroom' || target.zone === 'bossroom') return notice(p, 'In diesem Bereich ist kein Duell möglich.');
+    duelRequests[target.id] = { fromId: p.id, expiresAt: Date.now() + 30000 };
+    io.to(target.id).emit('duelIncoming', { fromId: p.id, fromName: p.name });
+    notice(p, `⚔️ Duell-Anfrage an ${target.name} gesendet.`);
+  });
+
+  socket.on('duelRespond', (data) => {
+    const p = players[socket.id];
+    const req = duelRequests[socket.id];
+    if (!p || !req) return;
+    if (data && data.fromId && data.fromId !== req.fromId) return;
+    delete duelRequests[socket.id];
+    const challenger = players[req.fromId];
+    if (Date.now() > req.expiresAt || !challenger || challenger.dead || p.dead) return;
+    if (!(data && data.accept)) { notice(challenger, `⚔️ ${p.name} hat das Duell abgelehnt.`); return; }
+    p.duelWith = challenger.id; challenger.duelWith = p.id;
+    p.zone = 'arena'; challenger.zone = 'arena';
+    p.x = ARENA_SPAWN.x - 40; p.y = ARENA_SPAWN.y;
+    challenger.x = ARENA_SPAWN.x + 40; challenger.y = ARENA_SPAWN.y;
+    p.hp = p.maxHp; challenger.hp = challenger.maxHp;
+    io.emit('announcement', `⚔️ ${challenger.name} und ${p.name} kämpfen ein Duell in der Arena!`);
+  });
+
   socket.on('ability', () => {
     const p = players[socket.id];
     if (!p || p.dead) return;
@@ -3419,6 +3461,11 @@ io.on('connection', (socket) => {
     for (const targetId in tpaRequests) {
       if (tpaRequests[targetId].fromId === socket.id) delete tpaRequests[targetId];
     }
+    delete duelRequests[socket.id];
+    for (const targetId in duelRequests) {
+      if (duelRequests[targetId].fromId === socket.id) delete duelRequests[targetId];
+    }
+    if (p && p.duelWith) { const o = players[p.duelWith]; if (o) o.duelWith = null; }
   });
 });
 

@@ -1540,12 +1540,21 @@ function renderPlayersPanel() {
   list.innerHTML = others.map(p => `
     <div class="playerRow">
       <span>${p.name} (Lv${p.level}) · ${zoneLabel(p.zone)}</span>
-      <button data-id="${p.id}">Anfrage senden</button>
+      <span>
+        <button data-id="${p.id}">Anfrage senden</button>
+        <button data-duel="${p.id}" title="Duell">⚔️</button>
+      </span>
     </div>
   `).join('');
   list.querySelectorAll('button[data-id]').forEach(btn => {
     btn.addEventListener('click', () => {
       socket.emit('teleportRequest', { targetId: btn.dataset.id });
+      togglePlayersPanel(false);
+    });
+  });
+  list.querySelectorAll('button[data-duel]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      socket.emit('duelRequest', { targetId: btn.dataset.duel });
       togglePlayersPanel(false);
     });
   });
@@ -1817,6 +1826,10 @@ function startGame() {
       document.getElementById('tpaBox').style.display = 'none';
       pendingTpaFromId = null;
     }, 30000);
+  });
+  socket.on('duelIncoming', (r) => {
+    const ok = confirm(`⚔️ ${r.fromName} fordert dich zum Duell in der Arena!\nAnnehmen?`);
+    socket.emit('duelRespond', { fromId: r.fromId, accept: ok });
   });
   socket.on('tpaSent', (r) => {
     addChat(`🧭 Anfrage an ${r.targetName} gesendet...`);
