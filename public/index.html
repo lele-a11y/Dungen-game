@@ -378,7 +378,20 @@
   #menuOptionChat { display:none; }
   .touch-active #menuOptionChat { display:block; }
   .touch-active #chatInput { display:none !important; }
-  .touch-active #chatBox { bottom:150px; width:min(280px, 58vw); max-height:84px; }
+  .touch-active #chatBox { bottom:150px; width:min(320px, 62vw); max-height:110px; font-size:14px; }
+  /* Groessere HUD-Elemente auf Touch-Geraeten */
+  .touch-active .barBox { width:205px; padding:8px 10px; }
+  .touch-active .barLabel { font-size:13px; }
+  .touch-active .barOuter { height:12px; }
+  .touch-active #zoneLabel { font-size:14px; padding:6px 16px; }
+  .touch-active #minimap { width:205px; height:auto; max-width:none; }
+  .touch-active #questHud, .touch-active #partyHud { font-size:12px; max-width:210px; }
+  .touch-active #raidBarTxt { font-size:14px; }
+  .touch-active #raidBar .rbOuter { height:14px; }
+  .touch-active #bossHudTxt { font-size:15px; }
+  .touch-active #bossHud .bhOuter { height:16px; }
+  .touch-active #buffHud { font-size:13px; gap:8px; }
+  .touch-active #chatBox div { font-size:14px; }
   .touch-active .menuOption, .touch-active #bpBody button, .touch-active #bpTabs button, .touch-active .shopItem button,
   .touch-active .adminSingleBtn, .touch-active #tiersPanel button, .touch-active #questsPanel button, .touch-active #bossroomPanel button, .touch-active #pvpPanel button {
     min-height:40px; font-size:13px; padding:8px 12px;
